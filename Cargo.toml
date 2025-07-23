@@ -1,0 +1,40 @@
+[package]
+name = "nntp-rs"
+version = "0.1.0"
+edition = "2021"
+authors = ["forever-august"]
+license = "Apache-2.0"
+description = "A sans-io NNTP (Network News Transfer Protocol) client library"
+homepage = "https://github.com/forever-august/nntp-rs"
+repository = "https://github.com/forever-august/nntp-rs"
+keywords = ["nntp", "news", "client", "sans-io", "async"]
+categories = ["network-programming", "asynchronous"]
+readme = "README.md"
+
+[dependencies]
+# Core dependencies for sans-io implementation
+bytes = "1.0"
+
+# Optional async runtime integrations
+tokio = { version = "1.0", features = ["net", "io-util"], optional = true }
+async-std = { version = "1.0", optional = true }
+smol = { version = "2.0", optional = true }
+
+[dev-dependencies]
+tokio = { version = "1.0", features = ["full"] }
+async-std = { version = "1.0", features = ["attributes"] }
+
+[features]
+default = []
+
+# Async runtime integrations
+tokio-runtime = ["dep:tokio"]
+async-std-runtime = ["dep:async-std"]  
+smol-runtime = ["dep:smol"]
+
+# Convenience feature to enable all runtimes
+all-runtimes = ["tokio-runtime", "async-std-runtime", "smol-runtime"]
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
