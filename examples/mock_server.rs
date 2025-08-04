@@ -4,7 +4,7 @@
 //! and test client behavior in isolation.
 
 use nntp_rs::mock::ClientMockTest;
-use nntp_rs::{Command, Response, ArticleSpec};
+use nntp_rs::{ArticleSpec, Command, Response};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("=== NNTP Mock Server Example ===\n");
@@ -55,7 +55,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let response = test.send_command(Command::Capabilities)?;
     match response {
         Response::Capabilities(caps) => {
-            println!("Server capabilities: {:?}", caps);
+            println!("Server capabilities: {caps:?}");
         }
         _ => println!("Unexpected response"),
     }
@@ -64,7 +64,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let response = test.send_command(Command::ModeReader)?;
     match response {
         Response::ModeReader { posting_allowed } => {
-            println!("Reader mode enabled, posting allowed: {}", posting_allowed);
+            println!("Reader mode enabled, posting allowed: {posting_allowed}");
         }
         _ => println!("Unexpected response"),
     }
@@ -74,8 +74,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("\n3. Testing group selection:");
     let response = test.send_command(Command::Group("comp.lang.rust".to_string()))?;
     match response {
-        Response::GroupSelected { name, count, first, last } => {
-            println!("Selected group '{}': {} articles ({}-{})", name, count, first, last);
+        Response::GroupSelected {
+            name,
+            count,
+            first,
+            last,
+        } => {
+            println!(
+                "Selected group '{name}': {count} articles ({first}-{last})"
+            );
         }
         _ => println!("Unexpected response"),
     }
@@ -85,10 +92,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("\n4. Testing article retrieval:");
     let response = test.send_command(Command::Article(ArticleSpec::Number(1)))?;
     match response {
-        Response::Article { number, message_id, content } => {
+        Response::Article {
+            number,
+            message_id,
+            content,
+        } => {
             println!("Retrieved article {} ({})", number.unwrap_or(0), message_id);
             let content_str = String::from_utf8_lossy(&content);
-            println!("Content preview: {}", content_str.lines().next().unwrap_or(""));
+            println!(
+                "Content preview: {}",
+                content_str.lines().next().unwrap_or("")
+            );
         }
         _ => println!("Unexpected response"),
     }

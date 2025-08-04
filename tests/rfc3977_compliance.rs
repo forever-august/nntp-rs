@@ -4,24 +4,22 @@
 //! using the mock server infrastructure.
 
 use nntp_rs::mock::ClientMockTest;
-use nntp_rs::{Command, Response, ArticleSpec};
+use nntp_rs::{ArticleSpec, Command, Response};
 
 /// Test basic connection and capabilities exchange as per RFC3977 Section 5.1
 #[test]
 fn test_rfc3977_basic_capabilities() {
-    let interactions = vec![
-        (
-            Command::Capabilities,
-            Response::Capabilities(vec![
-                "VERSION 2".to_string(),
-                "READER".to_string(),
-                "IHAVE".to_string(),
-                "POST".to_string(),
-                "NEWNEWS".to_string(),
-                "HDR".to_string(),
-            ]),
-        ),
-    ];
+    let interactions = vec![(
+        Command::Capabilities,
+        Response::Capabilities(vec![
+            "VERSION 2".to_string(),
+            "READER".to_string(),
+            "IHAVE".to_string(),
+            "POST".to_string(),
+            "NEWNEWS".to_string(),
+            "HDR".to_string(),
+        ]),
+    )];
 
     let mut test = ClientMockTest::new(interactions);
 
@@ -41,14 +39,12 @@ fn test_rfc3977_basic_capabilities() {
 /// Test mode reader command as per RFC3977 Section 5.3
 #[test]
 fn test_rfc3977_mode_reader() {
-    let interactions = vec![
-        (
-            Command::ModeReader,
-            Response::ModeReader {
-                posting_allowed: true,
-            },
-        ),
-    ];
+    let interactions = vec![(
+        Command::ModeReader,
+        Response::ModeReader {
+            posting_allowed: true,
+        },
+    )];
 
     let mut test = ClientMockTest::new(interactions);
 
@@ -66,17 +62,15 @@ fn test_rfc3977_mode_reader() {
 /// Test group selection as per RFC3977 Section 6.1.1
 #[test]
 fn test_rfc3977_group_selection() {
-    let interactions = vec![
-        (
-            Command::Group("misc.test".to_string()),
-            Response::GroupSelected {
-                count: 3000,
-                first: 3000,
-                last: 3002,
-                name: "misc.test".to_string(),
-            },
-        ),
-    ];
+    let interactions = vec![(
+        Command::Group("misc.test".to_string()),
+        Response::GroupSelected {
+            count: 3000,
+            first: 3000,
+            last: 3002,
+            name: "misc.test".to_string(),
+        },
+    )];
 
     let mut test = ClientMockTest::new(interactions);
 
@@ -148,7 +142,7 @@ fn test_rfc3977_article_by_number() {
     {
         assert_eq!(number, Some(3000));
         assert_eq!(message_id, "<45223423@example.com>");
-        assert!(content.len() > 0);
+        assert!(!content.is_empty());
         let content_str = String::from_utf8_lossy(&content);
         assert!(content_str.contains("Subject: I am just a test article"));
     } else {
@@ -338,31 +332,29 @@ fn test_rfc3977_stat_command() {
 fn test_rfc3977_list_command() {
     use nntp_rs::response::NewsGroup;
 
-    let interactions = vec![
-        (
-            Command::List(None),
-            Response::NewsgroupList(vec![
-                NewsGroup {
-                    name: "misc.test".to_string(),
-                    last: 3002,
-                    first: 3000,
-                    posting_status: 'y',
-                },
-                NewsGroup {
-                    name: "comp.risks".to_string(),
-                    last: 442418,
-                    first: 1,
-                    posting_status: 'm',
-                },
-                NewsGroup {
-                    name: "alt.rfc-writers.recovery".to_string(),
-                    last: 4,
-                    first: 1,
-                    posting_status: 'y',
-                },
-            ]),
-        ),
-    ];
+    let interactions = vec![(
+        Command::List(None),
+        Response::NewsgroupList(vec![
+            NewsGroup {
+                name: "misc.test".to_string(),
+                last: 3002,
+                first: 3000,
+                posting_status: 'y',
+            },
+            NewsGroup {
+                name: "comp.risks".to_string(),
+                last: 442418,
+                first: 1,
+                posting_status: 'm',
+            },
+            NewsGroup {
+                name: "alt.rfc-writers.recovery".to_string(),
+                last: 4,
+                first: 1,
+                posting_status: 'y',
+            },
+        ]),
+    )];
 
     let mut test = ClientMockTest::new(interactions);
 
@@ -370,13 +362,13 @@ fn test_rfc3977_list_command() {
 
     if let Response::NewsgroupList(groups) = response {
         assert_eq!(groups.len(), 3);
-        
+
         // Check first group
         assert_eq!(groups[0].name, "misc.test");
         assert_eq!(groups[0].last, 3002);
         assert_eq!(groups[0].first, 3000);
         assert_eq!(groups[0].posting_status, 'y');
-        
+
         // Check second group
         assert_eq!(groups[1].name, "comp.risks");
         assert_eq!(groups[1].posting_status, 'm');
@@ -391,10 +383,7 @@ fn test_rfc3977_list_command() {
 #[test]
 fn test_rfc3977_post_sequence() {
     let interactions = vec![
-        (
-            Command::Post,
-            Response::PostAccepted,
-        ),
+        (Command::Post, Response::PostAccepted),
         // Note: In a real scenario, the client would send article content here
         // but since this is testing the protocol sequence, we simulate success
     ];

@@ -48,12 +48,12 @@ impl MockServer {
                 Ok(response)
             } else if self.strict_mode {
                 Err(Error::InvalidCommand(format!(
-                    "Expected command {:?}, got {:?}",
-                    expected_cmd, command
+                    "Expected command {expected_cmd:?}, got {command:?}"
                 )))
             } else {
                 // Return the interaction back to the queue and send an error
-                self.expected_interactions.push_front((expected_cmd, response));
+                self.expected_interactions
+                    .push_front((expected_cmd, response));
                 Ok(Response::Error {
                     code: 500,
                     message: "Command not recognized".to_string(),
@@ -397,7 +397,8 @@ mod tests {
     #[test]
     fn test_response_encoding() {
         // Test capability response encoding
-        let caps_response = Response::Capabilities(vec!["VERSION 2".to_string(), "READER".to_string()]);
+        let caps_response =
+            Response::Capabilities(vec!["VERSION 2".to_string(), "READER".to_string()]);
         let encoded = encode_response(&caps_response).unwrap();
         let expected = b"101 Capability list:\r\nVERSION 2\r\nREADER\r\n.\r\n";
         assert_eq!(encoded, expected);
