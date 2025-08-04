@@ -50,8 +50,11 @@ pub mod command;
 pub mod error;
 pub mod response;
 
+// Mock server for testing
+pub mod mock;
+
 pub use client::Client;
-pub use command::Command;
+pub use command::{ArticleSpec, Command};
 pub use error::{Error, Result};
 pub use response::Response;
 
