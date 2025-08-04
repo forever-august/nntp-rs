@@ -97,6 +97,9 @@ pub enum Command {
         /// Message-ID of the article being offered
         message_id: String,
     },
+
+    /// List overview format
+    ListOverviewFmt,
 }
 
 /// Article specification - either message-id or article number
@@ -204,6 +207,7 @@ impl Command {
                 validate_parameter(message_id)?;
                 format!("IHAVE {message_id}")
             }
+            Command::ListOverviewFmt => "LIST OVERVIEW.FMT".to_string(),
         };
 
         let mut bytes = command_line.into_bytes();
@@ -362,5 +366,12 @@ mod tests {
             message_id: "invalid_id".to_string(),
         };
         assert!(cmd.encode().is_err());
+    }
+
+    #[test]
+    fn test_list_overview_fmt_command() {
+        let cmd = Command::ListOverviewFmt;
+        let encoded = cmd.encode().unwrap();
+        assert_eq!(encoded, b"LIST OVERVIEW.FMT\r\n");
     }
 }

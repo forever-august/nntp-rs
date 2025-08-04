@@ -93,6 +93,9 @@ pub enum Response {
     /// Overview data (224)
     OverviewData(Vec<OverviewEntry>),
 
+    /// Overview format data (215)
+    OverviewFormat(Vec<String>),
+
     /// Generic successful response
     Success {
         /// Response code
@@ -122,22 +125,71 @@ pub struct HeaderEntry {
 /// Overview entry for OVER command response
 #[derive(Debug, Clone, PartialEq)]
 pub struct OverviewEntry {
-    /// Article number
-    pub number: u64,
-    /// Subject header
-    pub subject: String,
-    /// From header
-    pub from: String,
-    /// Date header
-    pub date: String,
-    /// Message-ID header
-    pub message_id: String,
-    /// References header
-    pub references: String,
-    /// Byte count
-    pub byte_count: u64,
-    /// Line count
-    pub line_count: u64,
+    /// Raw tab-separated fields from the OVER response
+    pub fields: Vec<String>,
+}
+
+impl OverviewEntry {
+    /// Get article number (always the first field)
+    pub fn number(&self) -> Option<u64> {
+        self.fields.first()?.parse().ok()
+    }
+
+    /// Get field at specific index
+    pub fn get_field(&self, index: usize) -> Option<&str> {
+        self.fields.get(index).map(|s| s.as_str())
+    }
+
+    /// Get field by name (requires field format knowledge)
+    /// This is a helper that assumes the default RFC 3977 format
+    pub fn get_default_field(&self, field_name: &str) -> Option<&str> {
+        let index = match field_name.to_lowercase().as_str() {
+            "subject" => 1,
+            "from" => 2, 
+            "date" => 3,
+            "message-id" => 4,
+            "references" => 5,
+            "byte_count" | "bytes" => 6,
+            "line_count" | "lines" => 7,
+            _ => return None,
+        };
+        self.get_field(index)
+    }
+
+    /// Get subject field (index 1 in default format)
+    pub fn subject(&self) -> Option<&str> {
+        self.get_field(1)
+    }
+
+    /// Get from field (index 2 in default format)
+    pub fn from(&self) -> Option<&str> {
+        self.get_field(2)
+    }
+
+    /// Get date field (index 3 in default format)
+    pub fn date(&self) -> Option<&str> {
+        self.get_field(3)
+    }
+
+    /// Get message-id field (index 4 in default format)
+    pub fn message_id(&self) -> Option<&str> {
+        self.get_field(4)
+    }
+
+    /// Get references field (index 5 in default format)
+    pub fn references(&self) -> Option<&str> {
+        self.get_field(5)
+    }
+
+    /// Get byte count field (index 6 in default format)
+    pub fn byte_count(&self) -> Option<u64> {
+        self.get_field(6)?.parse().ok()
+    }
+
+    /// Get line count field (index 7 in default format)
+    pub fn line_count(&self) -> Option<u64> {
+        self.get_field(7)?.parse().ok()
+    }
 }
 
 /// Newsgroup information
@@ -218,13 +270,24 @@ impl Response {
                 }
             }
             215 => {
-                // Newsgroup list
-                let groups = lines[1..]
-                    .iter()
-                    .take_while(|line| **line != ".")
-                    .filter_map(|line| parse_newsgroup_line(line))
-                    .collect();
-                Ok(Response::NewsgroupList(groups))
+                // Could be newsgroup list or overview format
+                if message.to_lowercase().contains("overview") {
+                    // Overview format list
+                    let format_fields = lines[1..]
+                        .iter()
+                        .take_while(|line| **line != ".")
+                        .map(|line| line.to_string())
+                        .collect();
+                    Ok(Response::OverviewFormat(format_fields))
+                } else {
+                    // Newsgroup list
+                    let groups = lines[1..]
+                        .iter()
+                        .take_while(|line| **line != ".")
+                        .filter_map(|line| parse_newsgroup_line(line))
+                        .collect();
+                    Ok(Response::NewsgroupList(groups))
+                }
             }
             220..=222 => {
                 // Article content
@@ -408,21 +471,12 @@ fn parse_header_entry(line: &str) -> Option<HeaderEntry> {
 }
 
 fn parse_overview_entry(line: &str) -> Option<OverviewEntry> {
-    let parts: Vec<&str> = line.splitn(8, '\t').collect();
-    if parts.len() < 8 {
+    let parts: Vec<String> = line.split('\t').map(|s| s.to_string()).collect();
+    if parts.is_empty() {
         return None;
     }
 
-    Some(OverviewEntry {
-        number: parts[0].parse().ok()?,
-        subject: parts[1].to_string(),
-        from: parts[2].to_string(),
-        date: parts[3].to_string(),
-        message_id: parts[4].to_string(),
-        references: parts[5].to_string(),
-        byte_count: parts[6].parse().ok()?,
-        line_count: parts[7].parse().ok()?,
-    })
+    Some(OverviewEntry { fields: parts })
 }
 
 #[cfg(test)]
@@ -528,14 +582,33 @@ mod tests {
 
         if let Response::OverviewData(overview) = parsed {
             assert_eq!(overview.len(), 1);
-            assert_eq!(overview[0].number, 3000);
-            assert_eq!(overview[0].subject, "I am just a test article");
-            assert_eq!(overview[0].from, "demo@example.com");
-            assert_eq!(overview[0].message_id, "<45223423@example.com>");
-            assert_eq!(overview[0].byte_count, 1234);
-            assert_eq!(overview[0].line_count, 42);
+            assert_eq!(overview[0].number(), Some(3000));
+            assert_eq!(overview[0].subject(), Some("I am just a test article"));
+            assert_eq!(overview[0].from(), Some("demo@example.com"));
+            assert_eq!(overview[0].message_id(), Some("<45223423@example.com>"));
+            assert_eq!(overview[0].byte_count(), Some(1234));
+            assert_eq!(overview[0].line_count(), Some(42));
         } else {
             panic!("Expected OverviewData response");
+        }
+    }
+
+    #[test]
+    fn test_parse_overview_format_response() {
+        let response = "215 Order of fields in overview database.\r\nSubject:\r\nFrom:\r\nDate:\r\nMessage-ID:\r\nReferences:\r\nBytes:\r\nLines:\r\n.\r\n";
+        let parsed = Response::parse_str(response).unwrap();
+
+        if let Response::OverviewFormat(format_fields) = parsed {
+            assert_eq!(format_fields.len(), 7);
+            assert_eq!(format_fields[0], "Subject:");
+            assert_eq!(format_fields[1], "From:");
+            assert_eq!(format_fields[2], "Date:");
+            assert_eq!(format_fields[3], "Message-ID:");
+            assert_eq!(format_fields[4], "References:");
+            assert_eq!(format_fields[5], "Bytes:");
+            assert_eq!(format_fields[6], "Lines:");
+        } else {
+            panic!("Expected OverviewFormat response");
         }
     }
 }

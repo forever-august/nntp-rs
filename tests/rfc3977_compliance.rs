@@ -532,24 +532,28 @@ fn test_rfc3977_over_command() {
             },
             Response::OverviewData(vec![
                 OverviewEntry {
-                    number: 3000,
-                    subject: "I am just a test article".to_string(),
-                    from: "\"Demo User\" <nobody@example.com>".to_string(),
-                    date: "6 Oct 1998 04:38:40 -0500".to_string(),
-                    message_id: "<45223423@example.com>".to_string(),
-                    references: "".to_string(),
-                    byte_count: 1234,
-                    line_count: 42,
+                    fields: vec![
+                        "3000".to_string(),
+                        "I am just a test article".to_string(),
+                        "\"Demo User\" <nobody@example.com>".to_string(),
+                        "6 Oct 1998 04:38:40 -0500".to_string(),
+                        "<45223423@example.com>".to_string(),
+                        "".to_string(),
+                        "1234".to_string(),
+                        "42".to_string(),
+                    ],
                 },
                 OverviewEntry {
-                    number: 3001,
-                    subject: "Another test article".to_string(),
-                    from: "\"Another User\" <user@example.com>".to_string(),
-                    date: "7 Oct 1998 05:39:41 -0500".to_string(),
-                    message_id: "<45223424@example.com>".to_string(),
-                    references: "<45223423@example.com>".to_string(),
-                    byte_count: 2345,
-                    line_count: 56,
+                    fields: vec![
+                        "3001".to_string(),
+                        "Another test article".to_string(),
+                        "\"Another User\" <user@example.com>".to_string(),
+                        "7 Oct 1998 05:39:41 -0500".to_string(),
+                        "<45223424@example.com>".to_string(),
+                        "<45223423@example.com>".to_string(),
+                        "2345".to_string(),
+                        "56".to_string(),
+                    ],
                 },
             ]),
         ),
@@ -570,12 +574,12 @@ fn test_rfc3977_over_command() {
 
     if let Response::OverviewData(overview) = response {
         assert_eq!(overview.len(), 2);
-        assert_eq!(overview[0].number, 3000);
-        assert_eq!(overview[0].subject, "I am just a test article");
-        assert_eq!(overview[0].message_id, "<45223423@example.com>");
-        assert_eq!(overview[1].number, 3001);
-        assert_eq!(overview[1].subject, "Another test article");
-        assert_eq!(overview[1].references, "<45223423@example.com>");
+        assert_eq!(overview[0].number(), Some(3000));
+        assert_eq!(overview[0].subject(), Some("I am just a test article"));
+        assert_eq!(overview[0].message_id(), Some("<45223423@example.com>"));
+        assert_eq!(overview[1].number(), Some(3001));
+        assert_eq!(overview[1].subject(), Some("Another test article"));
+        assert_eq!(overview[1].references(), Some("<45223423@example.com>"));
     } else {
         panic!("Expected OverviewData response");
     }
@@ -781,6 +785,138 @@ fn test_rfc3977_help_command() {
         assert!(help_lines.iter().any(|line| line.contains("RFC 3977")));
     } else {
         panic!("Expected Help response");
+    }
+
+    assert!(test.is_complete());
+}
+
+/// Test LIST OVERVIEW.FMT command as per RFC 3977 Section 8.4
+#[test] 
+fn test_rfc3977_list_overview_fmt_command() {
+    let interactions = vec![(
+        Command::ListOverviewFmt,
+        Response::OverviewFormat(vec![
+            "Subject:".to_string(),
+            "From:".to_string(),
+            "Date:".to_string(),
+            "Message-ID:".to_string(),
+            "References:".to_string(),
+            "Bytes:".to_string(),
+            "Lines:".to_string(),
+        ]),
+    )];
+
+    let mut test = ClientMockTest::new(interactions);
+
+    let response = test.send_command(Command::ListOverviewFmt).unwrap();
+    if let Response::OverviewFormat(format_fields) = response {
+        assert_eq!(format_fields.len(), 7);
+        assert_eq!(format_fields[0], "Subject:");
+        assert_eq!(format_fields[1], "From:");
+        assert_eq!(format_fields[2], "Date:");
+        assert_eq!(format_fields[3], "Message-ID:");
+        assert_eq!(format_fields[4], "References:");
+        assert_eq!(format_fields[5], "Bytes:");
+        assert_eq!(format_fields[6], "Lines:");
+    } else {
+        panic!("Expected OverviewFormat response");
+    }
+
+    assert!(test.is_complete());
+}
+
+/// Test OVER command with flexible format based on LIST OVERVIEW.FMT
+#[test]
+fn test_rfc3977_over_command_flexible_format() {
+    use nntp_rs::OverviewEntry;
+
+    // Test with a custom format that has extra fields
+    let interactions = vec![
+        // First get the format
+        (
+            Command::ListOverviewFmt,
+            Response::OverviewFormat(vec![
+                "Subject:".to_string(),
+                "From:".to_string(), 
+                "Date:".to_string(),
+                "Message-ID:".to_string(),
+                "References:".to_string(),
+                "Bytes:".to_string(),
+                "Lines:".to_string(),
+                "Xref:full".to_string(), // Custom field
+            ]),
+        ),
+        // Then select a group
+        (
+            Command::Group("misc.test".to_string()),
+            Response::GroupSelected {
+                count: 3000,
+                first: 3000,
+                last: 3002,
+                name: "misc.test".to_string(),
+            },
+        ),
+        // Get overview data with the custom format
+        (
+            Command::Over {
+                range: Some("3000".to_string()),
+            },
+            Response::OverviewData(vec![OverviewEntry {
+                fields: vec![
+                    "3000".to_string(),
+                    "Test article with custom format".to_string(),
+                    "user@example.com".to_string(),
+                    "1 Nov 2023 12:00:00 -0500".to_string(),
+                    "<test@example.com>".to_string(),
+                    "".to_string(),
+                    "1000".to_string(),
+                    "25".to_string(),
+                    "misc.test:3000".to_string(), // Custom Xref field
+                ],
+            }]),
+        ),
+    ];
+
+    let mut test = ClientMockTest::new(interactions);
+
+    // Get format first
+    let response = test.send_command(Command::ListOverviewFmt).unwrap();
+    if let Response::OverviewFormat(format_fields) = response {
+        assert_eq!(format_fields.len(), 8); // 7 standard + 1 custom
+        assert_eq!(format_fields[7], "Xref:full");
+    } else {
+        panic!("Expected OverviewFormat response");
+    }
+
+    // Select group
+    test.send_command(Command::Group("misc.test".to_string())).unwrap();
+
+    // Test OVER command with custom format
+    let response = test
+        .send_command(Command::Over {
+            range: Some("3000".to_string()),
+        })
+        .unwrap();
+
+    if let Response::OverviewData(overview) = response {
+        assert_eq!(overview.len(), 1);
+        let entry = &overview[0];
+        
+        // Test access to standard fields
+        assert_eq!(entry.number(), Some(3000));
+        assert_eq!(entry.subject(), Some("Test article with custom format"));
+        assert_eq!(entry.from(), Some("user@example.com"));
+        assert_eq!(entry.message_id(), Some("<test@example.com>"));
+        assert_eq!(entry.byte_count(), Some(1000));
+        assert_eq!(entry.line_count(), Some(25));
+        
+        // Test access to custom field by index
+        assert_eq!(entry.get_field(8), Some("misc.test:3000"));
+        
+        // Verify we have all 9 fields (8 + article number)
+        assert_eq!(entry.fields.len(), 9);
+    } else {
+        panic!("Expected OverviewData response");
     }
 
     assert!(test.is_complete());

@@ -275,17 +275,18 @@ fn encode_response(response: &Response) -> Result<Vec<u8>> {
         Response::OverviewData(overview) => {
             let mut result = "224 Overview information follows\r\n".to_string();
             for entry in overview {
-                result.push_str(&format!(
-                    "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\r\n",
-                    entry.number,
-                    entry.subject,
-                    entry.from,
-                    entry.date,
-                    entry.message_id,
-                    entry.references,
-                    entry.byte_count,
-                    entry.line_count
-                ));
+                // Format as tab-separated fields
+                result.push_str(&entry.fields.join("\t"));
+                result.push_str("\r\n");
+            }
+            result.push_str(".\r\n");
+            result
+        }
+        Response::OverviewFormat(format_fields) => {
+            let mut result = "215 Order of fields in overview database\r\n".to_string();
+            for field in format_fields {
+                result.push_str(field);
+                result.push_str("\r\n");
             }
             result.push_str(".\r\n");
             result
