@@ -80,9 +80,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             first,
             last,
         } => {
-            println!(
-                "Selected group '{name}': {count} articles ({first}-{last})"
-            );
+            println!("Selected group '{name}': {count} articles ({first}-{last})");
         }
         _ => println!("Unexpected response"),
     }
