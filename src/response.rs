@@ -66,11 +66,32 @@ pub enum Response {
     /// Post accepted (340)
     PostAccepted,
 
+    /// Article wanted for IHAVE (335)
+    ArticleWanted,
+
+    /// Article not wanted for IHAVE (435/436)
+    ArticleNotWanted,
+
+    /// Article transferred successfully (235)
+    ArticleTransferred,
+
     /// Article posted successfully (240)
     PostSuccess,
 
     /// Connection closing (205)
     Quit,
+
+    /// Help information (100)
+    Help(Vec<String>),
+
+    /// Server date and time (111)
+    Date(String),
+
+    /// Header field data (225)
+    HeaderData(Vec<HeaderEntry>),
+
+    /// Overview data (224)
+    OverviewData(Vec<OverviewEntry>),
 
     /// Generic successful response
     Success {
@@ -87,6 +108,36 @@ pub enum Response {
         /// Error message
         message: String,
     },
+}
+
+/// Header entry for HDR command response
+#[derive(Debug, Clone, PartialEq)]
+pub struct HeaderEntry {
+    /// Article number or message ID
+    pub article: String,
+    /// Header field value
+    pub value: String,
+}
+
+/// Overview entry for OVER command response
+#[derive(Debug, Clone, PartialEq)]
+pub struct OverviewEntry {
+    /// Article number
+    pub number: u64,
+    /// Subject header
+    pub subject: String,
+    /// From header
+    pub from: String,
+    /// Date header
+    pub date: String,
+    /// Message-ID header
+    pub message_id: String,
+    /// References header
+    pub references: String,
+    /// Byte count
+    pub byte_count: u64,
+    /// Line count
+    pub line_count: u64,
 }
 
 /// Newsgroup information
@@ -122,6 +173,15 @@ impl Response {
         let (code, message) = parse_status_line(status_line)?;
 
         match code {
+            100 => {
+                // Help information
+                let help_lines = lines[1..]
+                    .iter()
+                    .take_while(|line| **line != ".")
+                    .map(|line| line.to_string())
+                    .collect();
+                Ok(Response::Help(help_lines))
+            }
             101 => {
                 // Capabilities list
                 let capabilities = lines[1..]
@@ -130,6 +190,10 @@ impl Response {
                     .map(|line| line.to_string())
                     .collect();
                 Ok(Response::Capabilities(capabilities))
+            }
+            111 => {
+                // Server date
+                Ok(Response::Date(message))
             }
             200 => Ok(Response::ModeReader {
                 posting_allowed: true,
@@ -170,6 +234,24 @@ impl Response {
                 // Article status
                 parse_article_status(&message)
             }
+            224 => {
+                // Overview data
+                let overview = lines[1..]
+                    .iter()
+                    .take_while(|line| **line != ".")
+                    .filter_map(|line| parse_overview_entry(line))
+                    .collect();
+                Ok(Response::OverviewData(overview))
+            }
+            225 => {
+                // Header data
+                let headers = lines[1..]
+                    .iter()
+                    .take_while(|line| **line != ".")
+                    .filter_map(|line| parse_header_entry(line))
+                    .collect();
+                Ok(Response::HeaderData(headers))
+            }
             230 => {
                 // New articles
                 let articles = lines[1..]
@@ -188,10 +270,13 @@ impl Response {
                     .collect();
                 Ok(Response::NewNewsgroups(groups))
             }
+            235 => Ok(Response::ArticleTransferred),
             240 => Ok(Response::PostSuccess),
             281 => Ok(Response::AuthSuccess),
+            335 => Ok(Response::ArticleWanted),
             340 => Ok(Response::PostAccepted),
             381 => Ok(Response::AuthRequired),
+            435 | 436 => Ok(Response::ArticleNotWanted),
             400..=599 => Ok(Response::Error { code, message }),
             _ => {
                 if (200..400).contains(&code) {
@@ -310,6 +395,36 @@ fn parse_newsgroup_line(line: &str) -> Option<NewsGroup> {
     })
 }
 
+fn parse_header_entry(line: &str) -> Option<HeaderEntry> {
+    let parts: Vec<&str> = line.splitn(2, ' ').collect();
+    if parts.len() < 2 {
+        return None;
+    }
+
+    Some(HeaderEntry {
+        article: parts[0].to_string(),
+        value: parts[1].to_string(),
+    })
+}
+
+fn parse_overview_entry(line: &str) -> Option<OverviewEntry> {
+    let parts: Vec<&str> = line.splitn(8, '\t').collect();
+    if parts.len() < 8 {
+        return None;
+    }
+
+    Some(OverviewEntry {
+        number: parts[0].parse().ok()?,
+        subject: parts[1].to_string(),
+        from: parts[2].to_string(),
+        date: parts[3].to_string(),
+        message_id: parts[4].to_string(),
+        references: parts[5].to_string(),
+        byte_count: parts[6].parse().ok()?,
+        line_count: parts[7].parse().ok()?,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -360,6 +475,67 @@ mod tests {
             assert_eq!(message, "Command not recognized");
         } else {
             panic!("Expected Error response");
+        }
+    }
+
+    #[test]
+    fn test_parse_help_response() {
+        let response = "100 Help text follows\r\nCAPABILITIES\r\nMODE READER\r\nGROUP\r\n.\r\n";
+        let parsed = Response::parse_str(response).unwrap();
+
+        if let Response::Help(help_lines) = parsed {
+            assert_eq!(help_lines.len(), 3);
+            assert_eq!(help_lines[0], "CAPABILITIES");
+            assert_eq!(help_lines[1], "MODE READER");
+            assert_eq!(help_lines[2], "GROUP");
+        } else {
+            panic!("Expected Help response");
+        }
+    }
+
+    #[test]
+    fn test_parse_date_response() {
+        let response = "111 20231106123456";
+        let parsed = Response::parse_str(response).unwrap();
+
+        if let Response::Date(date) = parsed {
+            assert_eq!(date, "20231106123456");
+        } else {
+            panic!("Expected Date response");
+        }
+    }
+
+    #[test]
+    fn test_parse_header_data_response() {
+        let response = "225 Header follows\r\n3000 I am just a test article\r\n3001 Another test article\r\n.\r\n";
+        let parsed = Response::parse_str(response).unwrap();
+
+        if let Response::HeaderData(headers) = parsed {
+            assert_eq!(headers.len(), 2);
+            assert_eq!(headers[0].article, "3000");
+            assert_eq!(headers[0].value, "I am just a test article");
+            assert_eq!(headers[1].article, "3001");
+            assert_eq!(headers[1].value, "Another test article");
+        } else {
+            panic!("Expected HeaderData response");
+        }
+    }
+
+    #[test]
+    fn test_parse_overview_data_response() {
+        let response = "224 Overview information follows\r\n3000\tI am just a test article\tdemo@example.com\t6 Oct 1998 04:38:40 -0500\t<45223423@example.com>\t\t1234\t42\r\n.\r\n";
+        let parsed = Response::parse_str(response).unwrap();
+
+        if let Response::OverviewData(overview) = parsed {
+            assert_eq!(overview.len(), 1);
+            assert_eq!(overview[0].number, 3000);
+            assert_eq!(overview[0].subject, "I am just a test article");
+            assert_eq!(overview[0].from, "demo@example.com");
+            assert_eq!(overview[0].message_id, "<45223423@example.com>");
+            assert_eq!(overview[0].byte_count, 1234);
+            assert_eq!(overview[0].line_count, 42);
+        } else {
+            panic!("Expected OverviewData response");
         }
     }
 }

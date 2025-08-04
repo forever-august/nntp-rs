@@ -245,7 +245,51 @@ fn encode_response(response: &Response) -> Result<Vec<u8>> {
         }
         Response::PostAccepted => "340 Send article to be posted\r\n".to_string(),
         Response::PostSuccess => "240 Article posted successfully\r\n".to_string(),
+        Response::ArticleWanted => "335 Send article to be transferred\r\n".to_string(),
+        Response::ArticleNotWanted => "435 Article not wanted\r\n".to_string(),
+        Response::ArticleTransferred => "235 Article transferred successfully\r\n".to_string(),
         Response::Quit => "205 Goodbye\r\n".to_string(),
+        Response::Help(help_lines) => {
+            let mut result = "100 Help text follows\r\n".to_string();
+            for line in help_lines {
+                result.push_str(line);
+                result.push_str("\r\n");
+            }
+            result.push_str(".\r\n");
+            result
+        }
+        Response::Date(date) => {
+            format!("111 {date}\r\n")
+        }
+        Response::HeaderData(headers) => {
+            let mut result = "225 Header follows\r\n".to_string();
+            for header in headers {
+                result.push_str(&header.article);
+                result.push(' ');
+                result.push_str(&header.value);
+                result.push_str("\r\n");
+            }
+            result.push_str(".\r\n");
+            result
+        }
+        Response::OverviewData(overview) => {
+            let mut result = "224 Overview information follows\r\n".to_string();
+            for entry in overview {
+                result.push_str(&format!(
+                    "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\r\n",
+                    entry.number,
+                    entry.subject,
+                    entry.from,
+                    entry.date,
+                    entry.message_id,
+                    entry.references,
+                    entry.byte_count,
+                    entry.line_count
+                ));
+            }
+            result.push_str(".\r\n");
+            result
+        }
         Response::Success { code, message } => {
             format!("{code} {message}\r\n")
         }

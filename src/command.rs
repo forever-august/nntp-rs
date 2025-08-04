@@ -65,6 +65,38 @@ pub enum Command {
 
     /// Terminate connection
     Quit,
+
+    /// Request help information
+    Help,
+
+    /// Request server date and time
+    Date,
+
+    /// Move to previous article in current group
+    Last,
+
+    /// Move to next article in current group
+    Next,
+
+    /// Retrieve specific header field for articles
+    Hdr {
+        /// Header field name (e.g. "Subject", "From")
+        field: String,
+        /// Range specification (message-id, number, or range)
+        range: Option<String>,
+    },
+
+    /// Retrieve overview information for articles
+    Over {
+        /// Range specification (message-id, number, or range)
+        range: Option<String>,
+    },
+
+    /// Offer an article to the server
+    Ihave {
+        /// Message-ID of the article being offered
+        message_id: String,
+    },
 }
 
 /// Article specification - either message-id or article number
@@ -142,6 +174,36 @@ impl Command {
             }
             Command::Post => "POST".to_string(),
             Command::Quit => "QUIT".to_string(),
+            Command::Help => "HELP".to_string(),
+            Command::Date => "DATE".to_string(),
+            Command::Last => "LAST".to_string(),
+            Command::Next => "NEXT".to_string(),
+            Command::Hdr { field, range } => {
+                validate_parameter(field)?;
+                if let Some(range) = range {
+                    validate_parameter(range)?;
+                    format!("HDR {field} {range}")
+                } else {
+                    format!("HDR {field}")
+                }
+            }
+            Command::Over { range } => {
+                if let Some(range) = range {
+                    validate_parameter(range)?;
+                    format!("OVER {range}")
+                } else {
+                    "OVER".to_string()
+                }
+            }
+            Command::Ihave { message_id } => {
+                if !message_id.starts_with('<') || !message_id.ends_with('>') {
+                    return Err(Error::InvalidCommand(
+                        "Message-ID must be enclosed in angle brackets".to_string(),
+                    ));
+                }
+                validate_parameter(message_id)?;
+                format!("IHAVE {message_id}")
+            }
         };
 
         let mut bytes = command_line.into_bytes();
@@ -218,6 +280,87 @@ mod tests {
     #[test]
     fn test_invalid_parameter() {
         let cmd = Command::Group("test\r\nQUIT".to_string());
+        assert!(cmd.encode().is_err());
+    }
+
+    #[test]
+    fn test_help_command() {
+        let cmd = Command::Help;
+        let encoded = cmd.encode().unwrap();
+        assert_eq!(encoded, b"HELP\r\n");
+    }
+
+    #[test]
+    fn test_date_command() {
+        let cmd = Command::Date;
+        let encoded = cmd.encode().unwrap();
+        assert_eq!(encoded, b"DATE\r\n");
+    }
+
+    #[test]
+    fn test_last_command() {
+        let cmd = Command::Last;
+        let encoded = cmd.encode().unwrap();
+        assert_eq!(encoded, b"LAST\r\n");
+    }
+
+    #[test]
+    fn test_next_command() {
+        let cmd = Command::Next;
+        let encoded = cmd.encode().unwrap();
+        assert_eq!(encoded, b"NEXT\r\n");
+    }
+
+    #[test]
+    fn test_hdr_command_simple() {
+        let cmd = Command::Hdr {
+            field: "Subject".to_string(),
+            range: None,
+        };
+        let encoded = cmd.encode().unwrap();
+        assert_eq!(encoded, b"HDR Subject\r\n");
+    }
+
+    #[test]
+    fn test_hdr_command_with_range() {
+        let cmd = Command::Hdr {
+            field: "From".to_string(),
+            range: Some("1-10".to_string()),
+        };
+        let encoded = cmd.encode().unwrap();
+        assert_eq!(encoded, b"HDR From 1-10\r\n");
+    }
+
+    #[test]
+    fn test_over_command_simple() {
+        let cmd = Command::Over { range: None };
+        let encoded = cmd.encode().unwrap();
+        assert_eq!(encoded, b"OVER\r\n");
+    }
+
+    #[test]
+    fn test_over_command_with_range() {
+        let cmd = Command::Over {
+            range: Some("3000-3002".to_string()),
+        };
+        let encoded = cmd.encode().unwrap();
+        assert_eq!(encoded, b"OVER 3000-3002\r\n");
+    }
+
+    #[test]
+    fn test_ihave_command() {
+        let cmd = Command::Ihave {
+            message_id: "<article@example.com>".to_string(),
+        };
+        let encoded = cmd.encode().unwrap();
+        assert_eq!(encoded, b"IHAVE <article@example.com>\r\n");
+    }
+
+    #[test]
+    fn test_ihave_invalid_message_id() {
+        let cmd = Command::Ihave {
+            message_id: "invalid_id".to_string(),
+        };
         assert!(cmd.encode().is_err());
     }
 }
