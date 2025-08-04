@@ -101,6 +101,51 @@ This library follows the sans-io design pattern, which means:
 - [x] POST
 - [x] QUIT
 
+## Testing and Compliance
+
+nntp-rs includes comprehensive testing infrastructure to help validate your NNTP client implementations:
+
+### Mock Server for Testing
+
+The library provides a mock server for testing NNTP client logic without requiring a real server:
+
+```rust
+use nntp_rs::mock::ClientMockTest;
+use nntp_rs::{Command, Response};
+
+// Define expected interactions
+let interactions = vec![
+    (Command::Capabilities, Response::Capabilities(vec!["VERSION 2".to_string()])),
+    (Command::ModeReader, Response::ModeReader { posting_allowed: true }),
+];
+
+// Create test environment
+let mut test = ClientMockTest::new(interactions);
+
+// Test your client logic
+let response = test.send_command(Command::Capabilities)?;
+// ... assertions ...
+```
+
+### RFC 3977 Compliance Tests
+
+The library includes comprehensive compliance tests based on RFC 3977 examples, covering:
+
+- Basic connection and capabilities exchange
+- Reader mode switching
+- Group selection and navigation
+- Article retrieval (ARTICLE, HEAD, BODY, STAT)
+- Newsgroup listing
+- Error handling
+- Complete session workflows
+
+Run compliance tests with:
+```bash
+cargo test rfc3977
+```
+
+See `examples/mock_server.rs` for a complete demonstration of testing capabilities.
+
 ## License
 
 Licensed under the Apache License, Version 2.0. See [LICENSE](LICENSE) for details.
