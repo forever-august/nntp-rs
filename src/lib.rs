@@ -56,7 +56,7 @@ pub mod mock;
 pub use client::Client;
 pub use command::{ArticleSpec, Command};
 pub use error::{Error, Result};
-pub use response::Response;
+pub use response::{HeaderEntry, NewsGroup, OverviewEntry, Response};
 
 // Optional async runtime integrations
 #[cfg(feature = "tokio-runtime")]

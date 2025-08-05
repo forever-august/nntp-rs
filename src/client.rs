@@ -230,7 +230,7 @@ impl Client {
 }
 
 fn is_multiline_response(code: u16) -> bool {
-    matches!(code, 100..=199 | 215 | 220..=222 | 230 | 231)
+    matches!(code, 100..=110 | 112..=199 | 215 | 220..=222 | 224..=225 | 230 | 231)
 }
 
 #[cfg(test)]
