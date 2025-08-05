@@ -145,7 +145,7 @@ impl OverviewEntry {
     pub fn get_default_field(&self, field_name: &str) -> Option<&str> {
         let index = match field_name.to_lowercase().as_str() {
             "subject" => 1,
-            "from" => 2, 
+            "from" => 2,
             "date" => 3,
             "message-id" => 4,
             "references" => 5,

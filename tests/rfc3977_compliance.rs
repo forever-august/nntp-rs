@@ -742,10 +742,7 @@ fn test_rfc3977_next_command() {
 /// Test DATE command as per RFC 3977 Section 7.1
 #[test]
 fn test_rfc3977_date_command() {
-    let interactions = vec![(
-        Command::Date,
-        Response::Date("20231106123456".to_string()),
-    )];
+    let interactions = vec![(Command::Date, Response::Date("20231106123456".to_string()))];
 
     let mut test = ClientMockTest::new(interactions);
 
@@ -791,7 +788,7 @@ fn test_rfc3977_help_command() {
 }
 
 /// Test LIST OVERVIEW.FMT command as per RFC 3977 Section 8.4
-#[test] 
+#[test]
 fn test_rfc3977_list_overview_fmt_command() {
     let interactions = vec![(
         Command::ListOverviewFmt,
@@ -837,7 +834,7 @@ fn test_rfc3977_over_command_flexible_format() {
             Command::ListOverviewFmt,
             Response::OverviewFormat(vec![
                 "Subject:".to_string(),
-                "From:".to_string(), 
+                "From:".to_string(),
                 "Date:".to_string(),
                 "Message-ID:".to_string(),
                 "References:".to_string(),
@@ -889,7 +886,8 @@ fn test_rfc3977_over_command_flexible_format() {
     }
 
     // Select group
-    test.send_command(Command::Group("misc.test".to_string())).unwrap();
+    test.send_command(Command::Group("misc.test".to_string()))
+        .unwrap();
 
     // Test OVER command with custom format
     let response = test
@@ -901,7 +899,7 @@ fn test_rfc3977_over_command_flexible_format() {
     if let Response::OverviewData(overview) = response {
         assert_eq!(overview.len(), 1);
         let entry = &overview[0];
-        
+
         // Test access to standard fields
         assert_eq!(entry.number(), Some(3000));
         assert_eq!(entry.subject(), Some("Test article with custom format"));
@@ -909,10 +907,10 @@ fn test_rfc3977_over_command_flexible_format() {
         assert_eq!(entry.message_id(), Some("<test@example.com>"));
         assert_eq!(entry.byte_count(), Some(1000));
         assert_eq!(entry.line_count(), Some(25));
-        
+
         // Test access to custom field by index
         assert_eq!(entry.get_field(8), Some("misc.test:3000"));
-        
+
         // Verify we have all 9 fields (8 + article number)
         assert_eq!(entry.fields.len(), 9);
     } else {
