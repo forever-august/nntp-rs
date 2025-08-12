@@ -451,6 +451,475 @@ fn test_rfc3977_error_responses() {
     assert!(test.is_complete());
 }
 
+/// Test IHAVE command as per RFC 3977 Section 6.3.2
+#[test]
+fn test_rfc3977_ihave_command() {
+    let interactions = vec![
+        // Offer article
+        (
+            Command::Ihave {
+                message_id: "<new_article@example.com>".to_string(),
+            },
+            Response::ArticleWanted,
+        ),
+        // In a real scenario, article content would be sent here followed by success
+    ];
+
+    let mut test = ClientMockTest::new(interactions);
+
+    let response = test
+        .send_command(Command::Ihave {
+            message_id: "<new_article@example.com>".to_string(),
+        })
+        .unwrap();
+
+    if let Response::ArticleWanted = response {
+        // Expected - server wants the article
+    } else {
+        panic!("Expected ArticleWanted response");
+    }
+
+    assert!(test.is_complete());
+}
+
+/// Test IHAVE rejection as per RFC 3977 Section 6.3.2
+#[test]
+fn test_rfc3977_ihave_rejection() {
+    let interactions = vec![(
+        Command::Ihave {
+            message_id: "<existing_article@example.com>".to_string(),
+        },
+        Response::ArticleNotWanted,
+    )];
+
+    let mut test = ClientMockTest::new(interactions);
+
+    let response = test
+        .send_command(Command::Ihave {
+            message_id: "<existing_article@example.com>".to_string(),
+        })
+        .unwrap();
+
+    if let Response::ArticleNotWanted = response {
+        // Expected - server doesn't want the article
+    } else {
+        panic!("Expected ArticleNotWanted response");
+    }
+
+    assert!(test.is_complete());
+}
+
+/// Test OVER command as per RFC 3977 Section 8.3
+#[test]
+fn test_rfc3977_over_command() {
+    use nntp_rs::OverviewEntry;
+
+    let interactions = vec![
+        // First select a group
+        (
+            Command::Group("misc.test".to_string()),
+            Response::GroupSelected {
+                count: 3000,
+                first: 3000,
+                last: 3002,
+                name: "misc.test".to_string(),
+            },
+        ),
+        // Get overview data for range
+        (
+            Command::Over {
+                range: Some("3000-3001".to_string()),
+            },
+            Response::OverviewData(vec![
+                OverviewEntry {
+                    fields: vec![
+                        "3000".to_string(),
+                        "I am just a test article".to_string(),
+                        "\"Demo User\" <nobody@example.com>".to_string(),
+                        "6 Oct 1998 04:38:40 -0500".to_string(),
+                        "<45223423@example.com>".to_string(),
+                        "".to_string(),
+                        "1234".to_string(),
+                        "42".to_string(),
+                    ],
+                },
+                OverviewEntry {
+                    fields: vec![
+                        "3001".to_string(),
+                        "Another test article".to_string(),
+                        "\"Another User\" <user@example.com>".to_string(),
+                        "7 Oct 1998 05:39:41 -0500".to_string(),
+                        "<45223424@example.com>".to_string(),
+                        "<45223423@example.com>".to_string(),
+                        "2345".to_string(),
+                        "56".to_string(),
+                    ],
+                },
+            ]),
+        ),
+    ];
+
+    let mut test = ClientMockTest::new(interactions);
+
+    // Select group first
+    test.send_command(Command::Group("misc.test".to_string()))
+        .unwrap();
+
+    // Test OVER command
+    let response = test
+        .send_command(Command::Over {
+            range: Some("3000-3001".to_string()),
+        })
+        .unwrap();
+
+    if let Response::OverviewData(overview) = response {
+        assert_eq!(overview.len(), 2);
+        assert_eq!(overview[0].number(), Some(3000));
+        assert_eq!(overview[0].subject(), Some("I am just a test article"));
+        assert_eq!(overview[0].message_id(), Some("<45223423@example.com>"));
+        assert_eq!(overview[1].number(), Some(3001));
+        assert_eq!(overview[1].subject(), Some("Another test article"));
+        assert_eq!(overview[1].references(), Some("<45223423@example.com>"));
+    } else {
+        panic!("Expected OverviewData response");
+    }
+
+    assert!(test.is_complete());
+}
+
+/// Test HDR command as per RFC 3977 Section 8.5
+#[test]
+fn test_rfc3977_hdr_command() {
+    use nntp_rs::HeaderEntry;
+
+    let interactions = vec![
+        // First select a group
+        (
+            Command::Group("misc.test".to_string()),
+            Response::GroupSelected {
+                count: 3000,
+                first: 3000,
+                last: 3002,
+                name: "misc.test".to_string(),
+            },
+        ),
+        // Get Subject headers for range
+        (
+            Command::Hdr {
+                field: "Subject".to_string(),
+                range: Some("3000-3002".to_string()),
+            },
+            Response::HeaderData(vec![
+                HeaderEntry {
+                    article: "3000".to_string(),
+                    value: "I am just a test article".to_string(),
+                },
+                HeaderEntry {
+                    article: "3001".to_string(),
+                    value: "Another test article".to_string(),
+                },
+                HeaderEntry {
+                    article: "3002".to_string(),
+                    value: "Yet another test".to_string(),
+                },
+            ]),
+        ),
+    ];
+
+    let mut test = ClientMockTest::new(interactions);
+
+    // Select group first
+    test.send_command(Command::Group("misc.test".to_string()))
+        .unwrap();
+
+    // Test HDR command
+    let response = test
+        .send_command(Command::Hdr {
+            field: "Subject".to_string(),
+            range: Some("3000-3002".to_string()),
+        })
+        .unwrap();
+
+    if let Response::HeaderData(headers) = response {
+        assert_eq!(headers.len(), 3);
+        assert_eq!(headers[0].article, "3000");
+        assert_eq!(headers[0].value, "I am just a test article");
+        assert_eq!(headers[1].article, "3001");
+        assert_eq!(headers[1].value, "Another test article");
+        assert_eq!(headers[2].article, "3002");
+        assert_eq!(headers[2].value, "Yet another test");
+    } else {
+        panic!("Expected HeaderData response");
+    }
+
+    assert!(test.is_complete());
+}
+
+/// Test LAST command as per RFC 3977 Section 6.1.4
+#[test]
+fn test_rfc3977_last_command() {
+    let interactions = vec![
+        // First select a group
+        (
+            Command::Group("misc.test".to_string()),
+            Response::GroupSelected {
+                count: 3000,
+                first: 3000,
+                last: 3002,
+                name: "misc.test".to_string(),
+            },
+        ),
+        // Move to last article
+        (
+            Command::Last,
+            Response::ArticleStatus {
+                number: 2999,
+                message_id: "<previous@example.com>".to_string(),
+            },
+        ),
+    ];
+
+    let mut test = ClientMockTest::new(interactions);
+
+    // Select group first
+    test.send_command(Command::Group("misc.test".to_string()))
+        .unwrap();
+
+    // Test LAST command
+    let response = test.send_command(Command::Last).unwrap();
+    if let Response::ArticleStatus { number, message_id } = response {
+        assert_eq!(number, 2999);
+        assert_eq!(message_id, "<previous@example.com>");
+    } else {
+        panic!("Expected ArticleStatus response");
+    }
+
+    assert!(test.is_complete());
+}
+
+/// Test NEXT command as per RFC 3977 Section 6.1.3
+#[test]
+fn test_rfc3977_next_command() {
+    let interactions = vec![
+        // First select a group
+        (
+            Command::Group("misc.test".to_string()),
+            Response::GroupSelected {
+                count: 3000,
+                first: 3000,
+                last: 3002,
+                name: "misc.test".to_string(),
+            },
+        ),
+        // Move to next article
+        (
+            Command::Next,
+            Response::ArticleStatus {
+                number: 3001,
+                message_id: "<next@example.com>".to_string(),
+            },
+        ),
+    ];
+
+    let mut test = ClientMockTest::new(interactions);
+
+    // Select group first
+    test.send_command(Command::Group("misc.test".to_string()))
+        .unwrap();
+
+    // Test NEXT command
+    let response = test.send_command(Command::Next).unwrap();
+    if let Response::ArticleStatus { number, message_id } = response {
+        assert_eq!(number, 3001);
+        assert_eq!(message_id, "<next@example.com>");
+    } else {
+        panic!("Expected ArticleStatus response");
+    }
+
+    assert!(test.is_complete());
+}
+
+/// Test DATE command as per RFC 3977 Section 7.1
+#[test]
+fn test_rfc3977_date_command() {
+    let interactions = vec![(Command::Date, Response::Date("20231106123456".to_string()))];
+
+    let mut test = ClientMockTest::new(interactions);
+
+    let response = test.send_command(Command::Date).unwrap();
+    if let Response::Date(date) = response {
+        assert_eq!(date.len(), 14); // YYYYMMDDHHMMSS format
+        assert!(date.chars().all(|c| c.is_ascii_digit()));
+    } else {
+        panic!("Expected Date response");
+    }
+
+    assert!(test.is_complete());
+}
+
+/// Test HELP command as per RFC 3977 Section 7.4.1
+#[test]
+fn test_rfc3977_help_command() {
+    let interactions = vec![(
+        Command::Help,
+        Response::Help(vec![
+            "This server accepts the following commands:".to_string(),
+            "ARTICLE BODY CAPABILITIES GROUP HEAD HELP".to_string(),
+            "IHAVE LAST LIST LISTGROUP MODE NEWGROUPS".to_string(),
+            "NEWNEWS NEXT POST QUIT STAT".to_string(),
+            "".to_string(),
+            "For more information, consult RFC 3977.".to_string(),
+        ]),
+    )];
+
+    let mut test = ClientMockTest::new(interactions);
+
+    let response = test.send_command(Command::Help).unwrap();
+    if let Response::Help(help_lines) = response {
+        assert!(!help_lines.is_empty());
+        assert!(help_lines[0].contains("server accepts"));
+        assert!(help_lines.iter().any(|line| line.contains("CAPABILITIES")));
+        assert!(help_lines.iter().any(|line| line.contains("RFC 3977")));
+    } else {
+        panic!("Expected Help response");
+    }
+
+    assert!(test.is_complete());
+}
+
+/// Test LIST OVERVIEW.FMT command as per RFC 3977 Section 8.4
+#[test]
+fn test_rfc3977_list_overview_fmt_command() {
+    let interactions = vec![(
+        Command::ListOverviewFmt,
+        Response::OverviewFormat(vec![
+            "Subject:".to_string(),
+            "From:".to_string(),
+            "Date:".to_string(),
+            "Message-ID:".to_string(),
+            "References:".to_string(),
+            "Bytes:".to_string(),
+            "Lines:".to_string(),
+        ]),
+    )];
+
+    let mut test = ClientMockTest::new(interactions);
+
+    let response = test.send_command(Command::ListOverviewFmt).unwrap();
+    if let Response::OverviewFormat(format_fields) = response {
+        assert_eq!(format_fields.len(), 7);
+        assert_eq!(format_fields[0], "Subject:");
+        assert_eq!(format_fields[1], "From:");
+        assert_eq!(format_fields[2], "Date:");
+        assert_eq!(format_fields[3], "Message-ID:");
+        assert_eq!(format_fields[4], "References:");
+        assert_eq!(format_fields[5], "Bytes:");
+        assert_eq!(format_fields[6], "Lines:");
+    } else {
+        panic!("Expected OverviewFormat response");
+    }
+
+    assert!(test.is_complete());
+}
+
+/// Test OVER command with flexible format based on LIST OVERVIEW.FMT
+#[test]
+fn test_rfc3977_over_command_flexible_format() {
+    use nntp_rs::OverviewEntry;
+
+    // Test with a custom format that has extra fields
+    let interactions = vec![
+        // First get the format
+        (
+            Command::ListOverviewFmt,
+            Response::OverviewFormat(vec![
+                "Subject:".to_string(),
+                "From:".to_string(),
+                "Date:".to_string(),
+                "Message-ID:".to_string(),
+                "References:".to_string(),
+                "Bytes:".to_string(),
+                "Lines:".to_string(),
+                "Xref:full".to_string(), // Custom field
+            ]),
+        ),
+        // Then select a group
+        (
+            Command::Group("misc.test".to_string()),
+            Response::GroupSelected {
+                count: 3000,
+                first: 3000,
+                last: 3002,
+                name: "misc.test".to_string(),
+            },
+        ),
+        // Get overview data with the custom format
+        (
+            Command::Over {
+                range: Some("3000".to_string()),
+            },
+            Response::OverviewData(vec![OverviewEntry {
+                fields: vec![
+                    "3000".to_string(),
+                    "Test article with custom format".to_string(),
+                    "user@example.com".to_string(),
+                    "1 Nov 2023 12:00:00 -0500".to_string(),
+                    "<test@example.com>".to_string(),
+                    "".to_string(),
+                    "1000".to_string(),
+                    "25".to_string(),
+                    "misc.test:3000".to_string(), // Custom Xref field
+                ],
+            }]),
+        ),
+    ];
+
+    let mut test = ClientMockTest::new(interactions);
+
+    // Get format first
+    let response = test.send_command(Command::ListOverviewFmt).unwrap();
+    if let Response::OverviewFormat(format_fields) = response {
+        assert_eq!(format_fields.len(), 8); // 7 standard + 1 custom
+        assert_eq!(format_fields[7], "Xref:full");
+    } else {
+        panic!("Expected OverviewFormat response");
+    }
+
+    // Select group
+    test.send_command(Command::Group("misc.test".to_string()))
+        .unwrap();
+
+    // Test OVER command with custom format
+    let response = test
+        .send_command(Command::Over {
+            range: Some("3000".to_string()),
+        })
+        .unwrap();
+
+    if let Response::OverviewData(overview) = response {
+        assert_eq!(overview.len(), 1);
+        let entry = &overview[0];
+
+        // Test access to standard fields
+        assert_eq!(entry.number(), Some(3000));
+        assert_eq!(entry.subject(), Some("Test article with custom format"));
+        assert_eq!(entry.from(), Some("user@example.com"));
+        assert_eq!(entry.message_id(), Some("<test@example.com>"));
+        assert_eq!(entry.byte_count(), Some(1000));
+        assert_eq!(entry.line_count(), Some(25));
+
+        // Test access to custom field by index
+        assert_eq!(entry.get_field(8), Some("misc.test:3000"));
+
+        // Verify we have all 9 fields (8 + article number)
+        assert_eq!(entry.fields.len(), 9);
+    } else {
+        panic!("Expected OverviewData response");
+    }
+
+    assert!(test.is_complete());
+}
+
 /// Test complete session workflow as per RFC3977 examples
 #[test]
 fn test_rfc3977_complete_session() {

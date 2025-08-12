@@ -100,6 +100,13 @@ This library follows the sans-io design pattern, which means:
 - [x] NEWNEWS
 - [x] POST
 - [x] QUIT
+- [x] HELP
+- [x] DATE
+- [x] LAST
+- [x] NEXT
+- [x] HDR
+- [x] OVER
+- [x] IHAVE
 
 ## Testing and Compliance
 
