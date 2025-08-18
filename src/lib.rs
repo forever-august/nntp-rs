@@ -54,7 +54,7 @@ pub mod response;
 pub mod mock;
 
 pub use client::Client;
-pub use command::{ArticleSpec, Command};
+pub use command::{ArticleSpec, Command, ListVariant};
 pub use error::{Error, Result};
 pub use response::{HeaderEntry, NewsGroup, OverviewEntry, Response};
 

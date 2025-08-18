@@ -294,6 +294,43 @@ fn encode_response(response: &Response) -> Result<Vec<u8>> {
         Response::Success { code, message } => {
             format!("{code} {message}\r\n")
         }
+        // RFC 3977 specific error responses
+        Response::ServiceDiscontinued { message } => {
+            format!("400 {message}\r\n")
+        }
+        Response::NoSuchNewsgroup { message } => {
+            format!("411 {message}\r\n")
+        }
+        Response::NoNewsgroupSelected { message } => {
+            format!("412 {message}\r\n")
+        }
+        Response::NoCurrentArticle { message } => {
+            format!("420 {message}\r\n")
+        }
+        Response::NoNextArticle { message } => {
+            format!("421 {message}\r\n")
+        }
+        Response::NoPreviousArticle { message } => {
+            format!("422 {message}\r\n")
+        }
+        Response::NoSuchArticle { message } => {
+            format!("430 {message}\r\n")
+        }
+        Response::AuthenticationRequired { message } => {
+            format!("480 {message}\r\n")
+        }
+        Response::CommandNotRecognized { message } => {
+            format!("500 {message}\r\n")
+        }
+        Response::CommandSyntaxError { message } => {
+            format!("501 {message}\r\n")
+        }
+        Response::AccessDenied { message } => {
+            format!("502 {message}\r\n")
+        }
+        Response::ProgramFault { message } => {
+            format!("503 {message}\r\n")
+        }
         Response::Error { code, message } => {
             format!("{code} {message}\r\n")
         }

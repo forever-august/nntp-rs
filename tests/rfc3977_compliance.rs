@@ -4,7 +4,7 @@
 //! using the mock server infrastructure.
 
 use nntp_rs::mock::ClientMockTest;
-use nntp_rs::{ArticleSpec, Command, Response};
+use nntp_rs::{ArticleSpec, Command, ListVariant, Response};
 
 /// Test basic connection and capabilities exchange as per RFC3977 Section 5.1
 #[test]
@@ -333,7 +333,7 @@ fn test_rfc3977_list_command() {
     use nntp_rs::response::NewsGroup;
 
     let interactions = vec![(
-        Command::List(None),
+        Command::List(ListVariant::Basic(None)),
         Response::NewsgroupList(vec![
             NewsGroup {
                 name: "misc.test".to_string(),
@@ -358,7 +358,9 @@ fn test_rfc3977_list_command() {
 
     let mut test = ClientMockTest::new(interactions);
 
-    let response = test.send_command(Command::List(None)).unwrap();
+    let response = test
+        .send_command(Command::List(ListVariant::Basic(None)))
+        .unwrap();
 
     if let Response::NewsgroupList(groups) = response {
         assert_eq!(groups.len(), 3);
@@ -408,8 +410,7 @@ fn test_rfc3977_error_responses() {
     let interactions = vec![
         (
             Command::Group("nonexistent.group".to_string()),
-            Response::Error {
-                code: 411,
+            Response::NoSuchNewsgroup {
                 message: "No such newsgroup".to_string(),
             },
         ),
@@ -429,11 +430,10 @@ fn test_rfc3977_error_responses() {
         .send_command(Command::Group("nonexistent.group".to_string()))
         .unwrap();
 
-    if let Response::Error { code, message } = response {
-        assert_eq!(code, 411);
+    if let Response::NoSuchNewsgroup { message } = response {
         assert!(message.contains("No such newsgroup"));
     } else {
-        panic!("Expected Error response");
+        panic!("Expected NoSuchNewsgroup response");
     }
 
     // Test nonexistent article
@@ -791,7 +791,7 @@ fn test_rfc3977_help_command() {
 #[test]
 fn test_rfc3977_list_overview_fmt_command() {
     let interactions = vec![(
-        Command::ListOverviewFmt,
+        Command::List(ListVariant::OverviewFmt),
         Response::OverviewFormat(vec![
             "Subject:".to_string(),
             "From:".to_string(),
@@ -805,7 +805,9 @@ fn test_rfc3977_list_overview_fmt_command() {
 
     let mut test = ClientMockTest::new(interactions);
 
-    let response = test.send_command(Command::ListOverviewFmt).unwrap();
+    let response = test
+        .send_command(Command::List(ListVariant::OverviewFmt))
+        .unwrap();
     if let Response::OverviewFormat(format_fields) = response {
         assert_eq!(format_fields.len(), 7);
         assert_eq!(format_fields[0], "Subject:");
@@ -831,7 +833,7 @@ fn test_rfc3977_over_command_flexible_format() {
     let interactions = vec![
         // First get the format
         (
-            Command::ListOverviewFmt,
+            Command::List(ListVariant::OverviewFmt),
             Response::OverviewFormat(vec![
                 "Subject:".to_string(),
                 "From:".to_string(),
@@ -877,7 +879,9 @@ fn test_rfc3977_over_command_flexible_format() {
     let mut test = ClientMockTest::new(interactions);
 
     // Get format first
-    let response = test.send_command(Command::ListOverviewFmt).unwrap();
+    let response = test
+        .send_command(Command::List(ListVariant::OverviewFmt))
+        .unwrap();
     if let Response::OverviewFormat(format_fields) = response {
         assert_eq!(format_fields.len(), 8); // 7 standard + 1 custom
         assert_eq!(format_fields[7], "Xref:full");

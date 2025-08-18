@@ -104,7 +104,80 @@ pub enum Response {
         message: String,
     },
 
-    /// Protocol error response (4xx/5xx)
+    // RFC 3977 specific error responses
+    /// Service discontinued (400)
+    ServiceDiscontinued {
+        /// Error message from server
+        message: String,
+    },
+
+    /// No such newsgroup (411)
+    NoSuchNewsgroup {
+        /// Error message from server
+        message: String,
+    },
+
+    /// No newsgroup has been selected (412)
+    NoNewsgroupSelected {
+        /// Error message from server
+        message: String,
+    },
+
+    /// No current article has been selected (420)
+    NoCurrentArticle {
+        /// Error message from server
+        message: String,
+    },
+
+    /// No next article in this group (421)
+    NoNextArticle {
+        /// Error message from server
+        message: String,
+    },
+
+    /// No previous article in this group (422)
+    NoPreviousArticle {
+        /// Error message from server
+        message: String,
+    },
+
+    /// No such article found (430)
+    NoSuchArticle {
+        /// Error message from server
+        message: String,
+    },
+
+    /// Authentication required (480)
+    AuthenticationRequired {
+        /// Error message from server
+        message: String,
+    },
+
+    /// Command not recognized (500)
+    CommandNotRecognized {
+        /// Error message from server
+        message: String,
+    },
+
+    /// Command syntax error (501)
+    CommandSyntaxError {
+        /// Error message from server
+        message: String,
+    },
+
+    /// Access restriction or permission denied (502)
+    AccessDenied {
+        /// Error message from server
+        message: String,
+    },
+
+    /// Program fault - command not performed (503)
+    ProgramFault {
+        /// Error message from server
+        message: String,
+    },
+
+    /// Protocol error response (4xx/5xx) - for unspecific errors
     Error {
         /// Error code
         code: u16,
@@ -340,7 +413,23 @@ impl Response {
             340 => Ok(Response::PostAccepted),
             381 => Ok(Response::AuthRequired),
             435 | 436 => Ok(Response::ArticleNotWanted),
-            400..=599 => Ok(Response::Error { code, message }),
+            // RFC 3977 specific error codes
+            400 => Ok(Response::ServiceDiscontinued { message }),
+            411 => Ok(Response::NoSuchNewsgroup { message }),
+            412 => Ok(Response::NoNewsgroupSelected { message }),
+            420 => Ok(Response::NoCurrentArticle { message }),
+            421 => Ok(Response::NoNextArticle { message }),
+            422 => Ok(Response::NoPreviousArticle { message }),
+            430 => Ok(Response::NoSuchArticle { message }),
+            480 => Ok(Response::AuthenticationRequired { message }),
+            500 => Ok(Response::CommandNotRecognized { message }),
+            501 => Ok(Response::CommandSyntaxError { message }),
+            502 => Ok(Response::AccessDenied { message }),
+            503 => Ok(Response::ProgramFault { message }),
+            // All other 4xx and 5xx error codes
+            401..=410 | 413..=419 | 423..=429 | 431..=479 | 481..=499 | 504..=599 => {
+                Ok(Response::Error { code, message })
+            }
             _ => {
                 if (200..400).contains(&code) {
                     Ok(Response::Success { code, message })
@@ -524,11 +613,10 @@ mod tests {
         let response = "500 Command not recognized";
         let parsed = Response::parse_str(response).unwrap();
 
-        if let Response::Error { code, message } = parsed {
-            assert_eq!(code, 500);
+        if let Response::CommandNotRecognized { message } = parsed {
             assert_eq!(message, "Command not recognized");
         } else {
-            panic!("Expected Error response");
+            panic!("Expected CommandNotRecognized response");
         }
     }
 

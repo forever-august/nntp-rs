@@ -148,7 +148,42 @@ impl Client {
         Ok(None)
     }
 
+    /// Validate that a command can be executed in the current state
+    fn validate_command_requirements(&self, command: &Command) -> Result<()> {
+        match command {
+            // Commands that require a group to be selected (RFC 3977)
+            Command::Last | Command::Next => {
+                if self.current_group().is_none() {
+                    return Err(Error::Protocol {
+                        code: 412,
+                        message: "No newsgroup has been selected".to_string(),
+                    });
+                }
+            }
+            Command::Over { range: None } | Command::Hdr { range: None, .. } => {
+                // OVER and HDR without range require current group selection
+                if self.current_group().is_none() {
+                    return Err(Error::Protocol {
+                        code: 412,
+                        message: "No newsgroup has been selected".to_string(),
+                    });
+                }
+            }
+            // Commands that might require authentication based on server policy
+            Command::Post => {
+                // Note: Some servers require authentication for posting
+                // This is server-dependent, so we don't enforce it here
+            }
+            // Most other commands don't have strict prerequisites
+            _ => {}
+        }
+        Ok(())
+    }
+
     fn update_state_for_command(&mut self, command: &Command) -> Result<()> {
+        // Validate that command can be executed in current state
+        self.validate_command_requirements(command)?;
+
         match command {
             Command::Quit => {
                 self.state = ClientState::Closed;

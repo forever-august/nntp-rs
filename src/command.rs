@@ -2,6 +2,25 @@
 
 use crate::error::{Error, Result};
 
+/// LIST command variants as specified in RFC 3977
+#[derive(Debug, Clone, PartialEq)]
+pub enum ListVariant {
+    /// LIST ACTIVE [wildmat] - Active newsgroups (RFC 3977 Section 7.6.3)
+    Active(Option<String>),
+    /// LIST NEWSGROUPS [wildmat] - Newsgroup descriptions (RFC 3977 Section 7.6.6)
+    Newsgroups(Option<String>),
+    /// LIST HEADERS - Available header fields for HDR command
+    Headers,
+    /// LIST ACTIVE.TIMES - Newsgroup creation times (RFC 3977 Section 7.6.4)
+    ActiveTimes,
+    /// LIST DISTRIBUTIONS - Distribution values (RFC 3977 Section 7.6.5)
+    Distributions,
+    /// LIST OVERVIEW.FMT - Overview format specification
+    OverviewFmt,
+    /// LIST [wildmat] - Basic list (backwards compatibility)
+    Basic(Option<String>),
+}
+
 /// NNTP commands that can be sent to the server.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Command {
@@ -35,8 +54,8 @@ pub enum Command {
     /// Get article status by message-id or number
     Stat(ArticleSpec),
 
-    /// List newsgroups with optional wildcard pattern
-    List(Option<String>),
+    /// List information with specific variants
+    List(ListVariant),
 
     /// List new newsgroups since date/time
     NewGroups {
@@ -46,6 +65,8 @@ pub enum Command {
         time: String,
         /// Optional timezone (GMT)
         gmt: bool,
+        /// Optional distributions parameter
+        distributions: Option<String>,
     },
 
     /// List new articles since date/time
@@ -97,9 +118,6 @@ pub enum Command {
         /// Message-ID of the article being offered
         message_id: String,
     },
-
-    /// List overview format
-    ListOverviewFmt,
 }
 
 /// Article specification - either message-id or article number
@@ -143,22 +161,54 @@ impl Command {
             Command::Head(spec) => format!("HEAD {}", spec.encode()?),
             Command::Body(spec) => format!("BODY {}", spec.encode()?),
             Command::Stat(spec) => format!("STAT {}", spec.encode()?),
-            Command::List(pattern) => {
-                if let Some(pattern) = pattern {
-                    validate_parameter(pattern)?;
-                    format!("LIST {pattern}")
-                } else {
-                    "LIST".to_string()
+            Command::List(variant) => match variant {
+                ListVariant::Active(pattern) => {
+                    if let Some(pattern) = pattern {
+                        validate_parameter(pattern)?;
+                        format!("LIST ACTIVE {pattern}")
+                    } else {
+                        "LIST ACTIVE".to_string()
+                    }
                 }
-            }
-            Command::NewGroups { date, time, gmt } => {
+                ListVariant::Newsgroups(pattern) => {
+                    if let Some(pattern) = pattern {
+                        validate_parameter(pattern)?;
+                        format!("LIST NEWSGROUPS {pattern}")
+                    } else {
+                        "LIST NEWSGROUPS".to_string()
+                    }
+                }
+                ListVariant::Headers => "LIST HEADERS".to_string(),
+                ListVariant::ActiveTimes => "LIST ACTIVE.TIMES".to_string(),
+                ListVariant::Distributions => "LIST DISTRIBUTIONS".to_string(),
+                ListVariant::OverviewFmt => "LIST OVERVIEW.FMT".to_string(),
+                ListVariant::Basic(pattern) => {
+                    if let Some(pattern) = pattern {
+                        validate_parameter(pattern)?;
+                        format!("LIST {pattern}")
+                    } else {
+                        "LIST".to_string()
+                    }
+                }
+            },
+            Command::NewGroups {
+                date,
+                time,
+                gmt,
+                distributions,
+            } => {
                 validate_parameter(date)?;
                 validate_parameter(time)?;
-                if *gmt {
+                let mut cmd = if *gmt {
                     format!("NEWGROUPS {date} {time} GMT")
                 } else {
                     format!("NEWGROUPS {date} {time}")
+                };
+                if let Some(dist) = distributions {
+                    validate_parameter(dist)?;
+                    cmd.push_str(&format!(" {dist}"));
                 }
+                cmd
             }
             Command::NewNews {
                 wildmat,
@@ -207,8 +257,10 @@ impl Command {
                 validate_parameter(message_id)?;
                 format!("IHAVE {message_id}")
             }
-            Command::ListOverviewFmt => "LIST OVERVIEW.FMT".to_string(),
         };
+
+        // RFC 3977: Command lines MUST NOT exceed 512 octets including CRLF
+        validate_command_length(&command_line)?;
 
         let mut bytes = command_line.into_bytes();
         bytes.extend_from_slice(b"\r\n");
@@ -245,6 +297,19 @@ fn validate_parameter(param: &str) -> Result<()> {
         return Err(Error::InvalidCommand(
             "Parameters cannot be empty".to_string(),
         ));
+    }
+    Ok(())
+}
+
+/// Validate command length according to RFC 3977
+/// Command lines MUST NOT exceed 512 octets, which includes the terminating CRLF pair
+fn validate_command_length(command: &str) -> Result<()> {
+    // 510 bytes for command + 2 bytes for CRLF = 512 total
+    if command.len() > 510 {
+        return Err(Error::InvalidCommand(format!(
+            "Command exceeds maximum length of 510 octets (got {})",
+            command.len()
+        )));
     }
     Ok(())
 }
@@ -370,7 +435,7 @@ mod tests {
 
     #[test]
     fn test_list_overview_fmt_command() {
-        let cmd = Command::ListOverviewFmt;
+        let cmd = Command::List(ListVariant::OverviewFmt);
         let encoded = cmd.encode().unwrap();
         assert_eq!(encoded, b"LIST OVERVIEW.FMT\r\n");
     }
