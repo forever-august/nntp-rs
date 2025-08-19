@@ -117,6 +117,262 @@ impl NntpClient {
         }
     }
 
+    /// List articles in current group with optional range.
+    pub async fn listgroup(&mut self, range: Option<String>) -> Result<Vec<u64>> {
+        let response = self.send_command(Command::ListGroup(range)).await?;
+        match response {
+            Response::ArticleListing(articles) => Ok(articles),
+            Response::Error { code, message } => Err(Error::Protocol { code, message }),
+            _ => Err(Error::InvalidResponse(
+                "Expected article list response".to_string(),
+            )),
+        }
+    }
+
+    /// Retrieve full article by message-id or number.
+    pub async fn article(&mut self, spec: crate::ArticleSpec) -> Result<Vec<u8>> {
+        let response = self.send_command(Command::Article(spec)).await?;
+        match response {
+            Response::Article { content, .. } => Ok(content),
+            Response::Error { code, message } => Err(Error::Protocol { code, message }),
+            _ => Err(Error::InvalidResponse(
+                "Expected article response".to_string(),
+            )),
+        }
+    }
+
+    /// Retrieve article headers by message-id or number.
+    pub async fn head(&mut self, spec: crate::ArticleSpec) -> Result<Vec<u8>> {
+        let response = self.send_command(Command::Head(spec)).await?;
+        match response {
+            Response::Article { content, .. } => Ok(content),
+            Response::Error { code, message } => Err(Error::Protocol { code, message }),
+            _ => Err(Error::InvalidResponse(
+                "Expected headers response".to_string(),
+            )),
+        }
+    }
+
+    /// Retrieve article body by message-id or number.
+    pub async fn body(&mut self, spec: crate::ArticleSpec) -> Result<Vec<u8>> {
+        let response = self.send_command(Command::Body(spec)).await?;
+        match response {
+            Response::Article { content, .. } => Ok(content),
+            Response::Error { code, message } => Err(Error::Protocol { code, message }),
+            _ => Err(Error::InvalidResponse("Expected body response".to_string())),
+        }
+    }
+
+    /// Get article status by message-id or number.
+    pub async fn stat(&mut self, spec: crate::ArticleSpec) -> Result<u64> {
+        let response = self.send_command(Command::Stat(spec)).await?;
+        match response {
+            Response::ArticleStatus { number, .. } => Ok(number),
+            Response::Error { code, message } => Err(Error::Protocol { code, message }),
+            _ => Err(Error::InvalidResponse(
+                "Expected status response".to_string(),
+            )),
+        }
+    }
+
+    /// List information with specific variants.
+    pub async fn list(&mut self, variant: crate::ListVariant) -> Result<Vec<crate::NewsGroup>> {
+        let response = self.send_command(Command::List(variant)).await?;
+        match response {
+            Response::NewsgroupList(list) => Ok(list),
+            Response::OverviewFormat(_list) => {
+                // Convert to dummy NewsGroup format for now
+                Ok(vec![])
+            }
+            Response::Error { code, message } => Err(Error::Protocol { code, message }),
+            _ => Err(Error::InvalidResponse("Expected list response".to_string())),
+        }
+    }
+
+    /// List new newsgroups since date/time.
+    pub async fn newgroups(
+        &mut self,
+        date: String,
+        time: String,
+        gmt: bool,
+        distributions: Option<String>,
+    ) -> Result<Vec<crate::NewsGroup>> {
+        let response = self
+            .send_command(Command::NewGroups {
+                date,
+                time,
+                gmt,
+                distributions,
+            })
+            .await?;
+        match response {
+            Response::NewNewsgroups(groups) => Ok(groups),
+            Response::Error { code, message } => Err(Error::Protocol { code, message }),
+            _ => Err(Error::InvalidResponse(
+                "Expected newgroups response".to_string(),
+            )),
+        }
+    }
+
+    /// List new articles since date/time.
+    pub async fn newnews(
+        &mut self,
+        wildmat: String,
+        date: String,
+        time: String,
+        gmt: bool,
+    ) -> Result<Vec<String>> {
+        let response = self
+            .send_command(Command::NewNews {
+                wildmat,
+                date,
+                time,
+                gmt,
+            })
+            .await?;
+        match response {
+            Response::NewArticles(articles) => Ok(articles),
+            Response::Error { code, message } => Err(Error::Protocol { code, message }),
+            _ => Err(Error::InvalidResponse(
+                "Expected newnews response".to_string(),
+            )),
+        }
+    }
+
+    /// Post an article.
+    pub async fn post(&mut self, article: String) -> Result<()> {
+        let response = self.send_command(Command::Post).await?;
+        match response {
+            Response::PostAccepted => {
+                // Send article content followed by a line with just a dot
+                let mut content = article.into_bytes();
+                content.extend_from_slice(b"\r\n.\r\n");
+                self.stream
+                    .write_all(&content)
+                    .await
+                    .map_err(|e| Error::Io(format!("Failed to send article: {e}")))?;
+
+                // Read response
+                let response = self.read_response().await?;
+                match response {
+                    Response::PostSuccess => Ok(()),
+                    Response::Error { code, message } => Err(Error::Protocol { code, message }),
+                    _ => Err(Error::InvalidResponse("Expected post response".to_string())),
+                }
+            }
+            Response::Error { code, message } => Err(Error::Protocol { code, message }),
+            _ => Err(Error::InvalidResponse(
+                "Expected post ready response".to_string(),
+            )),
+        }
+    }
+
+    /// Request help information.
+    pub async fn help(&mut self) -> Result<Vec<String>> {
+        let response = self.send_command(Command::Help).await?;
+        match response {
+            Response::Help(help_text) => Ok(help_text),
+            Response::Error { code, message } => Err(Error::Protocol { code, message }),
+            _ => Err(Error::InvalidResponse("Expected help response".to_string())),
+        }
+    }
+
+    /// Request server date and time.
+    pub async fn date(&mut self) -> Result<String> {
+        let response = self.send_command(Command::Date).await?;
+        match response {
+            Response::Date(date) => Ok(date),
+            Response::Error { code, message } => Err(Error::Protocol { code, message }),
+            _ => Err(Error::InvalidResponse("Expected date response".to_string())),
+        }
+    }
+
+    /// Move to previous article in current group.
+    pub async fn last(&mut self) -> Result<u64> {
+        let response = self.send_command(Command::Last).await?;
+        match response {
+            Response::ArticleStatus { number, .. } => Ok(number),
+            Response::Error { code, message } => Err(Error::Protocol { code, message }),
+            _ => Err(Error::InvalidResponse(
+                "Expected article status response".to_string(),
+            )),
+        }
+    }
+
+    /// Move to next article in current group.
+    pub async fn next(&mut self) -> Result<u64> {
+        let response = self.send_command(Command::Next).await?;
+        match response {
+            Response::ArticleStatus { number, .. } => Ok(number),
+            Response::Error { code, message } => Err(Error::Protocol { code, message }),
+            _ => Err(Error::InvalidResponse(
+                "Expected article status response".to_string(),
+            )),
+        }
+    }
+
+    /// Retrieve specific header field for articles.
+    pub async fn hdr(
+        &mut self,
+        field: String,
+        range: Option<String>,
+    ) -> Result<Vec<crate::HeaderEntry>> {
+        let response = self.send_command(Command::Hdr { field, range }).await?;
+        match response {
+            Response::HeaderData(headers) => Ok(headers),
+            Response::Error { code, message } => Err(Error::Protocol { code, message }),
+            _ => Err(Error::InvalidResponse(
+                "Expected headers response".to_string(),
+            )),
+        }
+    }
+
+    /// Retrieve overview information for articles.
+    pub async fn over(&mut self, range: Option<String>) -> Result<Vec<crate::OverviewEntry>> {
+        let response = self.send_command(Command::Over { range }).await?;
+        match response {
+            Response::OverviewData(overview) => Ok(overview),
+            Response::Error { code, message } => Err(Error::Protocol { code, message }),
+            _ => Err(Error::InvalidResponse(
+                "Expected overview response".to_string(),
+            )),
+        }
+    }
+
+    /// Offer an article to the server.
+    pub async fn ihave(&mut self, message_id: String, article: String) -> Result<()> {
+        let response = self.send_command(Command::Ihave { message_id }).await?;
+        match response {
+            Response::ArticleWanted => {
+                // Send article content followed by a line with just a dot
+                let mut content = article.into_bytes();
+                content.extend_from_slice(b"\r\n.\r\n");
+                self.stream
+                    .write_all(&content)
+                    .await
+                    .map_err(|e| Error::Io(format!("Failed to send article: {e}")))?;
+
+                // Read response
+                let response = self.read_response().await?;
+                match response {
+                    Response::ArticleTransferred => Ok(()),
+                    Response::Error { code, message } => Err(Error::Protocol { code, message }),
+                    _ => Err(Error::InvalidResponse(
+                        "Expected transfer response".to_string(),
+                    )),
+                }
+            }
+            Response::ArticleNotWanted => Err(Error::Protocol {
+                code: 435,
+                message: "Article not wanted".to_string(),
+            }),
+            Response::Error { code, message } => Err(Error::Protocol { code, message }),
+            _ => Err(Error::InvalidResponse(
+                "Expected ihave response".to_string(),
+            )),
+        }
+    }
+
     /// Quit and close connection.
     pub async fn quit(mut self) -> Result<()> {
         let _response = self.send_command(Command::Quit).await?;
