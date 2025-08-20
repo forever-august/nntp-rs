@@ -141,54 +141,6 @@ impl NntpClient {
         }
     }
 
-    /// Retrieve full article by message-id or number, returning parsed message.
-    pub async fn article_parsed(&mut self, spec: crate::ArticleSpec) -> Result<crate::Response> {
-        let response = self.send_command(Command::Article(spec)).await?;
-        match response {
-            Response::Article { .. } => Ok(response),
-            Response::Error { code, message } => Err(Error::Protocol { code, message }),
-            _ => Err(Error::InvalidResponse(
-                "Expected article response".to_string(),
-            )),
-        }
-    }
-
-    /// Retrieve article subject by message-id or number.
-    pub async fn article_subject(&mut self, spec: crate::ArticleSpec) -> Result<Option<String>> {
-        let response = self.send_command(Command::Article(spec)).await?;
-        match response {
-            Response::Article { .. } => Ok(response.article_subject()),
-            Response::Error { code, message } => Err(Error::Protocol { code, message }),
-            _ => Err(Error::InvalidResponse(
-                "Expected article response".to_string(),
-            )),
-        }
-    }
-
-    /// Retrieve article sender by message-id or number.
-    pub async fn article_from(&mut self, spec: crate::ArticleSpec) -> Result<Option<String>> {
-        let response = self.send_command(Command::Article(spec)).await?;
-        match response {
-            Response::Article { .. } => Ok(response.article_from()),
-            Response::Error { code, message } => Err(Error::Protocol { code, message }),
-            _ => Err(Error::InvalidResponse(
-                "Expected article response".to_string(),
-            )),
-        }
-    }
-
-    /// Retrieve article body text by message-id or number.
-    pub async fn article_body_text(&mut self, spec: crate::ArticleSpec) -> Result<Option<String>> {
-        let response = self.send_command(Command::Article(spec)).await?;
-        match response {
-            Response::Article { .. } => Ok(response.article_body()),
-            Response::Error { code, message } => Err(Error::Protocol { code, message }),
-            _ => Err(Error::InvalidResponse(
-                "Expected article response".to_string(),
-            )),
-        }
-    }
-
     /// Retrieve article headers by message-id or number.
     pub async fn head(&mut self, spec: crate::ArticleSpec) -> Result<Vec<u8>> {
         let response = self.send_command(Command::Head(spec)).await?;
@@ -201,33 +153,11 @@ impl NntpClient {
         }
     }
 
-    /// Retrieve article headers by message-id or number, returning parsed message.
-    pub async fn head_parsed(&mut self, spec: crate::ArticleSpec) -> Result<crate::Response> {
-        let response = self.send_command(Command::Head(spec)).await?;
-        match response {
-            Response::Article { .. } => Ok(response),
-            Response::Error { code, message } => Err(Error::Protocol { code, message }),
-            _ => Err(Error::InvalidResponse(
-                "Expected headers response".to_string(),
-            )),
-        }
-    }
-
     /// Retrieve article body by message-id or number.
     pub async fn body(&mut self, spec: crate::ArticleSpec) -> Result<Vec<u8>> {
         let response = self.send_command(Command::Body(spec)).await?;
         match response {
             Response::Article { content, .. } => Ok(content),
-            Response::Error { code, message } => Err(Error::Protocol { code, message }),
-            _ => Err(Error::InvalidResponse("Expected body response".to_string())),
-        }
-    }
-
-    /// Retrieve article body by message-id or number, returning parsed message.
-    pub async fn body_parsed(&mut self, spec: crate::ArticleSpec) -> Result<crate::Response> {
-        let response = self.send_command(Command::Body(spec)).await?;
-        match response {
-            Response::Article { .. } => Ok(response),
             Response::Error { code, message } => Err(Error::Protocol { code, message }),
             _ => Err(Error::InvalidResponse("Expected body response".to_string())),
         }
