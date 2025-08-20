@@ -56,7 +56,7 @@ pub mod mock;
 pub use client::Client;
 pub use command::{ArticleSpec, Command, ListVariant};
 pub use error::{Error, Result};
-pub use response::{HeaderEntry, NewsGroup, OverviewEntry, Response};
+pub use response::{HeaderEntry, NewsGroup, OverviewEntry, ParsedArticle, Response};
 
 // Re-export mail_parser::Message for structured article parsing
 pub use mail_parser::Message;
