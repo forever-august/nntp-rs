@@ -58,6 +58,9 @@ pub use command::{ArticleSpec, Command, ListVariant};
 pub use error::{Error, Result};
 pub use response::{HeaderEntry, NewsGroup, OverviewEntry, Response};
 
+// Re-export mail_parser::Message for structured article parsing
+pub use mail_parser::Message;
+
 // Optional async runtime integrations
 #[cfg(feature = "tokio-runtime")]
 #[cfg_attr(docsrs, doc(cfg(feature = "tokio-runtime")))]

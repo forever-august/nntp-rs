@@ -442,14 +442,12 @@ impl Response {
     }
 
     /// Parse article content as an email message (only applicable to Article responses)
-    /// 
+    ///
     /// Returns a parsed message if this is an Article response and the content
     /// can be successfully parsed as an email message.
     pub fn parsed_message(&self) -> Option<Message<'_>> {
         match self {
-            Response::Article { content, .. } => {
-                MessageParser::default().parse(content)
-            }
+            Response::Article { content, .. } => MessageParser::default().parse(content),
             _ => None,
         }
     }
@@ -467,7 +465,11 @@ impl Response {
     /// This is a convenience method that parses the article content and extracts
     /// the from field.
     pub fn article_from(&self) -> Option<String> {
-        self.parsed_message()?.from()?.first()?.address().map(|s| s.to_string())
+        self.parsed_message()?
+            .from()?
+            .first()?
+            .address()
+            .map(|s| s.to_string())
     }
 
     /// Get body text from article content (only applicable to Article responses)
@@ -749,15 +751,18 @@ mod tests {
 
         // Test parsing methods
         assert!(article_response.parsed_message().is_some());
-        
+
         let subject = article_response.article_subject();
         assert_eq!(subject, Some("I am just a test article".to_string()));
-        
+
         let from = article_response.article_from();
         assert_eq!(from, Some("nobody@example.com".to_string()));
-        
+
         let body = article_response.article_body();
-        assert_eq!(body, Some("This is just a test article body.\r\n".to_string()));
+        assert_eq!(
+            body,
+            Some("This is just a test article body.\r\n".to_string())
+        );
 
         // Test with non-Article response
         let other_response = Response::Quit;
