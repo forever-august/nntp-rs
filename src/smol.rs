@@ -131,10 +131,14 @@ impl NntpClient {
     }
 
     /// Retrieve full article by message-id or number.
-    pub async fn article(&mut self, spec: crate::ArticleSpec) -> Result<Vec<u8>> {
+    pub async fn article(&mut self, spec: crate::ArticleSpec) -> Result<crate::ParsedArticle> {
         let response = self.send_command(Command::Article(spec)).await?;
         match response {
-            Response::Article { content, .. } => Ok(content),
+            Response::Article {
+                number,
+                message_id,
+                content,
+            } => Ok(crate::ParsedArticle::new(number, message_id, content)),
             Response::Error { code, message } => Err(Error::Protocol { code, message }),
             _ => Err(Error::InvalidResponse(
                 "Expected article response".to_string(),

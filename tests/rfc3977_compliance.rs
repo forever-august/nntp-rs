@@ -1002,3 +1002,84 @@ fn test_rfc3977_complete_session() {
 
     assert!(test.is_complete());
 }
+
+/// Test mail_parser integration with article responses
+#[test]
+fn test_rfc3977_article_mail_parser_integration() {
+    let interactions = vec![
+        (
+            Command::Group("misc.test".to_string()),
+            Response::GroupSelected {
+                count: 3000,
+                first: 3000,
+                last: 3002,
+                name: "misc.test".to_string(),
+            },
+        ),
+        (
+            Command::Article(ArticleSpec::Number(3000)),
+            Response::Article {
+                number: Some(3000),
+                message_id: "<45223423@example.com>".to_string(),
+                content: b"From: \"Demo User\" <nobody@example.com>\r\nNewsgroups: misc.test\r\nSubject: I am just a test article\r\nDate: Wed, 06 Oct 1998 04:38:40 -0500\r\nMessage-ID: <45223423@example.com>\r\n\r\nThis is just a test article body.\r\nWith multiple lines of content.\r\n".to_vec(),
+            },
+        ),
+    ];
+
+    let mut test = ClientMockTest::new(interactions);
+
+    // Select group
+    test.send_command(Command::Group("misc.test".to_string()))
+        .unwrap();
+
+    // Retrieve article
+    let response = test
+        .send_command(Command::Article(ArticleSpec::Number(3000)))
+        .unwrap();
+
+    if let Response::Article {
+        number,
+        message_id,
+        content,
+    } = response
+    {
+        assert_eq!(number, Some(3000));
+        assert_eq!(message_id, "<45223423@example.com>");
+
+        // Test traditional raw content access (backwards compatibility)
+        let content_str = String::from_utf8_lossy(&content);
+        assert!(content_str.contains("Subject: I am just a test article"));
+        assert!(content_str.contains("This is just a test article body."));
+
+        // Test new parsed message functionality
+        let article_response = Response::Article {
+            number: Some(3000),
+            message_id: "<45223423@example.com>".to_string(),
+            content,
+        };
+
+        // Test parsed message access
+        let parsed_message = article_response.parsed_message();
+        assert!(
+            parsed_message.is_some(),
+            "Should be able to parse email message"
+        );
+
+        // Test convenience methods for extracting parsed data
+        let subject = article_response.article_subject();
+        assert_eq!(subject, Some("I am just a test article".to_string()));
+
+        let from = article_response.article_from();
+        assert_eq!(from, Some("nobody@example.com".to_string()));
+
+        let body = article_response.article_body();
+        assert!(body.is_some());
+        let body_text = body.unwrap();
+        assert!(body_text.contains("This is just a test article body."));
+        assert!(body_text.contains("With multiple lines of content."));
+    } else {
+        panic!("Expected Article response");
+    }
+
+    assert!(test.is_complete());
+}
