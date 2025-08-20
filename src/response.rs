@@ -1,6 +1,7 @@
 //! NNTP response types and parsing.
 
 use crate::error::{Error, Result};
+use mail_parser::{Message, MessageParser};
 use std::str;
 
 /// NNTP server responses
@@ -439,6 +440,43 @@ impl Response {
             }
         }
     }
+
+    /// Parse article content as an email message (only applicable to Article responses)
+    /// 
+    /// Returns a parsed message if this is an Article response and the content
+    /// can be successfully parsed as an email message.
+    pub fn parsed_message(&self) -> Option<Message<'_>> {
+        match self {
+            Response::Article { content, .. } => {
+                MessageParser::default().parse(content)
+            }
+            _ => None,
+        }
+    }
+
+    /// Get subject from article content (only applicable to Article responses)
+    ///
+    /// This is a convenience method that parses the article content and extracts
+    /// the subject field.
+    pub fn article_subject(&self) -> Option<String> {
+        self.parsed_message()?.subject().map(|s| s.to_string())
+    }
+
+    /// Get sender from article content (only applicable to Article responses)  
+    ///
+    /// This is a convenience method that parses the article content and extracts
+    /// the from field.
+    pub fn article_from(&self) -> Option<String> {
+        self.parsed_message()?.from()?.first()?.address().map(|s| s.to_string())
+    }
+
+    /// Get body text from article content (only applicable to Article responses)
+    ///
+    /// This is a convenience method that parses the article content and extracts
+    /// the body text.
+    pub fn article_body(&self) -> Option<String> {
+        self.parsed_message()?.body_text(0).map(|s| s.to_string())
+    }
 }
 
 fn parse_status_line(line: &str) -> Result<(u16, String)> {
@@ -698,5 +736,34 @@ mod tests {
         } else {
             panic!("Expected OverviewFormat response");
         }
+    }
+
+    #[test]
+    fn test_article_response_parsing_methods() {
+        // Create an Article response with realistic email content
+        let article_response = Response::Article {
+            number: Some(3000),
+            message_id: "<45223423@example.com>".to_string(),
+            content: b"From: \"Demo User\" <nobody@example.com>\r\nNewsgroups: misc.test\r\nSubject: I am just a test article\r\nDate: Wed, 06 Oct 1998 04:38:40 -0500\r\n\r\nThis is just a test article body.\r\n".to_vec(),
+        };
+
+        // Test parsing methods
+        assert!(article_response.parsed_message().is_some());
+        
+        let subject = article_response.article_subject();
+        assert_eq!(subject, Some("I am just a test article".to_string()));
+        
+        let from = article_response.article_from();
+        assert_eq!(from, Some("nobody@example.com".to_string()));
+        
+        let body = article_response.article_body();
+        assert_eq!(body, Some("This is just a test article body.\r\n".to_string()));
+
+        // Test with non-Article response
+        let other_response = Response::Quit;
+        assert!(other_response.parsed_message().is_none());
+        assert!(other_response.article_subject().is_none());
+        assert!(other_response.article_from().is_none());
+        assert!(other_response.article_body().is_none());
     }
 }
