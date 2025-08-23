@@ -5,9 +5,9 @@ use crate::error::{Error, Result};
 /// LIST command variants as specified in RFC 3977
 #[derive(Debug, Clone, PartialEq)]
 pub enum ListVariant {
-    /// LIST ACTIVE [wildmat] - Active newsgroups (RFC 3977 Section 7.6.3)
+    /// LIST ACTIVE \[wildmat\] - Active newsgroups (RFC 3977 Section 7.6.3)
     Active(Option<String>),
-    /// LIST NEWSGROUPS [wildmat] - Newsgroup descriptions (RFC 3977 Section 7.6.6)
+    /// LIST NEWSGROUPS \[wildmat\] - Newsgroup descriptions (RFC 3977 Section 7.6.6)
     Newsgroups(Option<String>),
     /// LIST HEADERS - Available header fields for HDR command
     Headers,
@@ -17,7 +17,7 @@ pub enum ListVariant {
     Distributions,
     /// LIST OVERVIEW.FMT - Overview format specification
     OverviewFmt,
-    /// LIST [wildmat] - Basic list (backwards compatibility)
+    /// LIST \[wildmat\] - Basic list (backwards compatibility)
     Basic(Option<String>),
 }
 
