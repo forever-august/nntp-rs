@@ -11,6 +11,7 @@ A modern, sans-io NNTP (Network News Transfer Protocol) client library for Rust.
 
 - **Sans-IO Design**: Protocol logic is separated from I/O operations, allowing you to use any async runtime or transport
 - **Async Runtime Agnostic**: Optional integrations with popular async runtimes (Tokio, async-std, smol)
+- **Multiple Text Encodings**: Automatic detection and conversion of various text encodings (UTF-8, Windows-1252, ISO-8859-15, etc.) to UTF-8
 - **Type-Safe**: Leverages Rust's type system to provide a safe and ergonomic API
 - **RFC 3977 Compliant**: Implements the NNTP protocol as specified in RFC 3977
 - **Extensible**: Support for NNTP extensions and custom commands

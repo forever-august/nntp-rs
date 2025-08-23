@@ -370,7 +370,12 @@ fn decode_text_with_encoding(data: &[u8]) -> String {
 }
 
 impl Response {
-    /// Parse response from server bytes
+    /// Parse response from server bytes with automatic encoding detection
+    /// 
+    /// This method automatically detects and converts various text encodings
+    /// to UTF-8, including UTF-8, Windows-1252, ISO-8859-15, and others.
+    /// This ensures compatibility with NNTP servers that send responses in
+    /// different character encodings.
     pub fn parse(data: &[u8]) -> Result<Self> {
         let response_text = decode_text_with_encoding(data);
         Self::parse_str(&response_text)
