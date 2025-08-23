@@ -15,6 +15,7 @@ readme = "README.md"
 # Core dependencies for sans-io implementation
 bytes = "1.0"
 mail-parser = "0.9"
+encoding_rs = "0.8"
 
 # Optional async runtime integrations
 tokio = { version = "1.0", features = ["net", "io-util"], optional = true }
