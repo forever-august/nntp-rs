@@ -333,13 +333,47 @@ pub struct NewsGroup {
     pub posting_status: char,
 }
 
+/// Convert bytes with various text encodings to UTF-8 string
+/// 
+/// This function attempts to detect the encoding of the input bytes and convert
+/// them to a UTF-8 string. It tries several common encodings used in NNTP:
+/// 1. UTF-8 (try first since it's most common now)
+/// 2. Windows-1252 (covers ISO-8859-1 range plus extra characters)
+/// 3. ISO-8859-15 (Latin-9, common in Europe)
+/// 4. ISO-8859-2 (Central European)
+/// 
+/// If all fail, it falls back to lossy UTF-8 conversion.
+fn decode_text_with_encoding(data: &[u8]) -> String {
+    // First try UTF-8 since it's the most common nowadays
+    if let Ok(text) = std::str::from_utf8(data) {
+        return text.to_string();
+    }
+    
+    // Common encodings to try in order of likelihood for NNTP
+    let encodings_to_try = [
+        encoding_rs::WINDOWS_1252, // Covers ISO-8859-1 plus extras, very common
+        encoding_rs::ISO_8859_15,  // Latin-9, common in Europe
+        encoding_rs::ISO_8859_2,   // Central European
+        encoding_rs::UTF_16LE,     // Little-endian UTF-16
+        encoding_rs::UTF_16BE,     // Big-endian UTF-16
+    ];
+    
+    for encoding in &encodings_to_try {
+        let (decoded, _, had_errors) = encoding.decode(data);
+        if !had_errors {
+            return decoded.into_owned();
+        }
+    }
+    
+    // If all else fails, use lossy UTF-8 conversion
+    String::from_utf8_lossy(data).into_owned()
+}
+
 impl Response {
     /// Parse response from server bytes
     pub fn parse(data: &[u8]) -> Result<Self> {
-        let response_text =
-            str::from_utf8(data).map_err(|e| Error::Parse(format!("Invalid UTF-8: {e}")))?;
-
-        Self::parse_str(response_text)
+        let response_text = decode_text_with_encoding(data);
+        Self::parse_str(&response_text)
     }
 
     /// Parse response from string
@@ -855,5 +889,126 @@ mod tests {
             body,
             Some("This is just a test article body.\r\n".to_string())
         );
+    }
+
+    #[test]
+    fn test_encoding_detection_utf8() {
+        // Test UTF-8 encoding (should work as before)
+        let utf8_data = "101 Capability list:\r\nVERSION 2\r\nREADER\r\n.\r\n".as_bytes();
+        let response = Response::parse(utf8_data).unwrap();
+        
+        if let Response::Capabilities(caps) = response {
+            assert_eq!(caps.len(), 2);
+            assert_eq!(caps[0], "VERSION 2");
+            assert_eq!(caps[1], "READER");
+        } else {
+            panic!("Expected Capabilities response");
+        }
+    }
+
+    #[test]
+    fn test_encoding_detection_windows1252() {
+        // Test Windows-1252 encoding with special characters
+        // Windows-1252 byte 0x80 = Euro sign (€), 0x85 = ellipsis (…)
+        let mut win1252_data = Vec::new();
+        win1252_data.extend_from_slice(b"200 Welcome to the news server ");
+        win1252_data.push(0x80); // Euro sign in Windows-1252
+        win1252_data.extend_from_slice(b" ");
+        win1252_data.push(0x85); // Ellipsis in Windows-1252  
+        win1252_data.extend_from_slice(b"\r\n");
+        
+        let response = Response::parse(&win1252_data).unwrap();
+        
+        if let Response::ModeReader { posting_allowed } = response {
+            assert!(posting_allowed);
+        } else {
+            panic!("Expected ModeReader response");
+        }
+    }
+
+    #[test]
+    fn test_encoding_detection_iso_8859_15() {
+        // Test ISO-8859-15 encoding with special characters
+        // ISO-8859-15 byte 0xA4 = Euro sign (€)
+        let mut iso_data = Vec::new();
+        iso_data.extend_from_slice(b"211 100 1 100 test.group ");
+        iso_data.push(0xA4); // Euro sign in ISO-8859-15
+        iso_data.extend_from_slice(b"\r\n");
+        
+        let response = Response::parse(&iso_data).unwrap();
+        
+        if let Response::GroupSelected { count, first, last, name } = response {
+            assert_eq!(count, 100);
+            assert_eq!(first, 1);
+            assert_eq!(last, 100);
+            assert!(name.contains("test.group"));
+        } else {
+            panic!("Expected GroupSelected response");
+        }
+    }
+
+    #[test]
+    fn test_encoding_detection_invalid_utf8() {
+        // Test data that is not valid UTF-8 but can be decoded with fallback
+        let invalid_utf8 = vec![
+            b'5', b'0', b'0', b' ',
+            0xFF, 0xFE, // Invalid UTF-8 byte sequence
+            b' ', b'E', b'r', b'r', b'o', b'r', b'\r', b'\n'
+        ];
+        
+        let response = Response::parse(&invalid_utf8).unwrap();
+        
+        // The encoding system should handle the invalid UTF-8 bytes gracefully
+        if let Response::CommandNotRecognized { message } = response {
+            // The message should contain some representation of the invalid bytes
+            // which got converted to valid UTF-8 characters (replacement chars or similar)
+            assert!(message.contains("Error"));
+        } else {
+            panic!("Expected CommandNotRecognized response, got: {:?}", response);
+        }
+    }
+
+    #[test]
+    fn test_encoding_detection_mixed_content() {
+        // Test multiline response with potential encoding issues
+        let mut mixed_data = Vec::new();
+        mixed_data.extend_from_slice(b"215 Newsgroups follow:\r\n");
+        mixed_data.extend_from_slice(b"comp.lang.rust 1000 1 y\r\n");
+        // Add some ISO-8859-15 specific characters
+        mixed_data.extend_from_slice(b"de.test.");
+        mixed_data.push(0xA4); // Euro sign in ISO-8859-15
+        mixed_data.extend_from_slice(b" 50 1 n\r\n");
+        mixed_data.extend_from_slice(b".\r\n");
+        
+        let response = Response::parse(&mixed_data).unwrap();
+        
+        if let Response::NewsgroupList(groups) = response {
+            assert_eq!(groups.len(), 2);
+            assert_eq!(groups[0].name, "comp.lang.rust");
+            assert!(groups[1].name.starts_with("de.test."));
+        } else {
+            panic!("Expected NewsgroupList response");
+        }
+    }
+
+    #[test]
+    fn test_decode_text_with_encoding_direct() {
+        // Test the decode_text_with_encoding function directly
+        
+        // UTF-8 text should work fine
+        let utf8_text = "Hello, 世界!";
+        let utf8_bytes = utf8_text.as_bytes();
+        assert_eq!(decode_text_with_encoding(utf8_bytes), utf8_text);
+        
+        // Windows-1252 with special characters
+        let win1252_bytes = vec![0x48, 0x65, 0x6C, 0x6C, 0x6F, 0x20, 0x80]; // "Hello €"
+        let decoded = decode_text_with_encoding(&win1252_bytes);
+        assert_eq!(decoded, "Hello €");
+        
+        // Test fallback with completely invalid data
+        let invalid_bytes = vec![0xFF, 0xFE, 0xFD];
+        let decoded = decode_text_with_encoding(&invalid_bytes);
+        // Should not panic and should return some string
+        assert!(!decoded.is_empty());
     }
 }
