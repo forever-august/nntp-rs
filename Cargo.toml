@@ -16,6 +16,7 @@ readme = "README.md"
 bytes = "1.0"
 mail-parser = "0.9"
 encoding_rs = "0.8"
+async-trait = "0.1"
 
 # Optional async runtime integrations
 tokio = { version = "1.0", features = ["net", "io-util"], optional = true }
@@ -36,6 +37,13 @@ smol-runtime = ["dep:smol"]
 
 # Convenience feature to enable all runtimes
 all-runtimes = ["tokio-runtime", "async-std-runtime", "smol-runtime"]
+
+# Test utilities (mock server for testing)
+test-utils = []
+
+[[example]]
+name = "mock_server"
+required-features = ["test-utils"]
 
 [package.metadata.docs.rs]
 all-features = true

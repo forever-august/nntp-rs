@@ -64,7 +64,7 @@ match response {
 ### With Tokio Integration
 
 ```rust
-use nntp_rs::tokio::NntpClient;
+use nntp_rs::runtime::tokio::NntpClient;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
