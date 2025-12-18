@@ -118,17 +118,52 @@ pub enum Command {
         /// Message-ID of the article being offered
         message_id: String,
     },
+
+    /// STARTTLS command (RFC 4642).
+    ///
+    /// Initiates TLS negotiation. After receiving a successful response
+    /// ([`Response::TlsReady`]), the client should perform a TLS handshake
+    /// on the underlying connection.
+    ///
+    /// # Protocol Notes
+    ///
+    /// This library provides the protocol-level support for STARTTLS but does
+    /// not perform the actual TLS handshake. Callers using the sans-IO layer
+    /// should:
+    ///
+    /// 1. Send the `StartTls` command
+    /// 2. Receive and parse the response
+    /// 3. If `TlsReady` is received, wrap the underlying stream with a TLS layer
+    /// 4. Continue NNTP communication over the now-encrypted connection
+    ///
+    /// [`Response::TlsReady`]: crate::response::Response::TlsReady
+    StartTls,
 }
 
-/// Article specification - either message-id or article number
+/// Article specification - either message-id or article number within a group
 #[derive(Debug, Clone, PartialEq)]
 pub enum ArticleSpec {
-    /// Article number within current group
-    Number(u64),
-    /// Message-ID in angle brackets
+    /// Article number within a specific group
+    GroupNumber {
+        /// The newsgroup name
+        group: String,
+        /// Article number within the group
+        article_number: u64,
+    },
+    /// Message-ID in angle brackets (globally unique)
     MessageId(String),
     /// Current article (no parameter)
     Current,
+}
+
+impl ArticleSpec {
+    /// Create an ArticleSpec for an article number within a group
+    pub fn number_in_group(group: impl Into<String>, number: u64) -> Self {
+        Self::GroupNumber {
+            group: group.into(),
+            article_number: number,
+        }
+    }
 }
 
 impl Command {
@@ -257,6 +292,7 @@ impl Command {
                 validate_parameter(message_id)?;
                 format!("IHAVE {message_id}")
             }
+            Command::StartTls => "STARTTLS".to_string(),
         };
 
         // RFC 3977: Command lines MUST NOT exceed 512 octets including CRLF
@@ -271,7 +307,7 @@ impl Command {
 impl ArticleSpec {
     fn encode(&self) -> Result<String> {
         match self {
-            ArticleSpec::Number(num) => Ok(num.to_string()),
+            ArticleSpec::GroupNumber { article_number, .. } => Ok(article_number.to_string()),
             ArticleSpec::MessageId(id) => {
                 if !id.starts_with('<') || !id.ends_with('>') {
                     return Err(Error::InvalidCommand(
@@ -334,9 +370,21 @@ mod tests {
 
     #[test]
     fn test_article_by_number() {
-        let cmd = Command::Article(ArticleSpec::Number(123));
+        let cmd = Command::Article(ArticleSpec::number_in_group("misc.test", 123));
         let encoded = cmd.encode().unwrap();
+        // Note: group is for client-side context only, wire protocol only sends article number
         assert_eq!(encoded, b"ARTICLE 123\r\n");
+    }
+
+    #[test]
+    fn test_article_spec_group_number() {
+        let spec = ArticleSpec::GroupNumber {
+            group: "alt.test".to_string(),
+            article_number: 456,
+        };
+        let cmd = Command::Article(spec);
+        let encoded = cmd.encode().unwrap();
+        assert_eq!(encoded, b"ARTICLE 456\r\n");
     }
 
     #[test]
@@ -438,5 +486,385 @@ mod tests {
         let cmd = Command::List(ListVariant::OverviewFmt);
         let encoded = cmd.encode().unwrap();
         assert_eq!(encoded, b"LIST OVERVIEW.FMT\r\n");
+    }
+
+    #[test]
+    fn test_starttls_command() {
+        let cmd = Command::StartTls;
+        let encoded = cmd.encode().unwrap();
+        assert_eq!(encoded, b"STARTTLS\r\n");
+    }
+
+    #[test]
+    fn test_mode_reader_command() {
+        let cmd = Command::ModeReader;
+        let encoded = cmd.encode().unwrap();
+        assert_eq!(encoded, b"MODE READER\r\n");
+    }
+
+    #[test]
+    fn test_auth_info_user_command() {
+        let cmd = Command::AuthInfoUser("testuser".to_string());
+        let encoded = cmd.encode().unwrap();
+        assert_eq!(encoded, b"AUTHINFO USER testuser\r\n");
+    }
+
+    #[test]
+    fn test_auth_info_pass_command() {
+        let cmd = Command::AuthInfoPass("testpass".to_string());
+        let encoded = cmd.encode().unwrap();
+        assert_eq!(encoded, b"AUTHINFO PASS testpass\r\n");
+    }
+
+    #[test]
+    fn test_listgroup_no_range() {
+        let cmd = Command::ListGroup(None);
+        let encoded = cmd.encode().unwrap();
+        assert_eq!(encoded, b"LISTGROUP\r\n");
+    }
+
+    #[test]
+    fn test_listgroup_with_range() {
+        let cmd = Command::ListGroup(Some("misc.test 1-100".to_string()));
+        let encoded = cmd.encode().unwrap();
+        assert_eq!(encoded, b"LISTGROUP misc.test 1-100\r\n");
+    }
+
+    #[test]
+    fn test_head_command() {
+        let cmd = Command::Head(ArticleSpec::MessageId("<test@example.com>".to_string()));
+        let encoded = cmd.encode().unwrap();
+        assert_eq!(encoded, b"HEAD <test@example.com>\r\n");
+    }
+
+    #[test]
+    fn test_body_command() {
+        let cmd = Command::Body(ArticleSpec::MessageId("<test@example.com>".to_string()));
+        let encoded = cmd.encode().unwrap();
+        assert_eq!(encoded, b"BODY <test@example.com>\r\n");
+    }
+
+    #[test]
+    fn test_stat_command() {
+        let cmd = Command::Stat(ArticleSpec::number_in_group("misc.test", 42));
+        let encoded = cmd.encode().unwrap();
+        assert_eq!(encoded, b"STAT 42\r\n");
+    }
+
+    #[test]
+    fn test_article_current() {
+        let cmd = Command::Article(ArticleSpec::Current);
+        let encoded = cmd.encode().unwrap();
+        assert_eq!(encoded, b"ARTICLE \r\n");
+    }
+
+    #[test]
+    fn test_list_active_no_pattern() {
+        let cmd = Command::List(ListVariant::Active(None));
+        let encoded = cmd.encode().unwrap();
+        assert_eq!(encoded, b"LIST ACTIVE\r\n");
+    }
+
+    #[test]
+    fn test_list_active_with_pattern() {
+        let cmd = Command::List(ListVariant::Active(Some("comp.*".to_string())));
+        let encoded = cmd.encode().unwrap();
+        assert_eq!(encoded, b"LIST ACTIVE comp.*\r\n");
+    }
+
+    #[test]
+    fn test_list_newsgroups_no_pattern() {
+        let cmd = Command::List(ListVariant::Newsgroups(None));
+        let encoded = cmd.encode().unwrap();
+        assert_eq!(encoded, b"LIST NEWSGROUPS\r\n");
+    }
+
+    #[test]
+    fn test_list_newsgroups_with_pattern() {
+        let cmd = Command::List(ListVariant::Newsgroups(Some("alt.*".to_string())));
+        let encoded = cmd.encode().unwrap();
+        assert_eq!(encoded, b"LIST NEWSGROUPS alt.*\r\n");
+    }
+
+    #[test]
+    fn test_list_headers() {
+        let cmd = Command::List(ListVariant::Headers);
+        let encoded = cmd.encode().unwrap();
+        assert_eq!(encoded, b"LIST HEADERS\r\n");
+    }
+
+    #[test]
+    fn test_list_active_times() {
+        let cmd = Command::List(ListVariant::ActiveTimes);
+        let encoded = cmd.encode().unwrap();
+        assert_eq!(encoded, b"LIST ACTIVE.TIMES\r\n");
+    }
+
+    #[test]
+    fn test_list_distributions() {
+        let cmd = Command::List(ListVariant::Distributions);
+        let encoded = cmd.encode().unwrap();
+        assert_eq!(encoded, b"LIST DISTRIBUTIONS\r\n");
+    }
+
+    #[test]
+    fn test_list_basic_no_pattern() {
+        let cmd = Command::List(ListVariant::Basic(None));
+        let encoded = cmd.encode().unwrap();
+        assert_eq!(encoded, b"LIST\r\n");
+    }
+
+    #[test]
+    fn test_list_basic_with_pattern() {
+        let cmd = Command::List(ListVariant::Basic(Some("misc.*".to_string())));
+        let encoded = cmd.encode().unwrap();
+        assert_eq!(encoded, b"LIST misc.*\r\n");
+    }
+
+    #[test]
+    fn test_newgroups_no_gmt() {
+        let cmd = Command::NewGroups {
+            date: "20240101".to_string(),
+            time: "120000".to_string(),
+            gmt: false,
+            distributions: None,
+        };
+        let encoded = cmd.encode().unwrap();
+        assert_eq!(encoded, b"NEWGROUPS 20240101 120000\r\n");
+    }
+
+    #[test]
+    fn test_newgroups_with_gmt() {
+        let cmd = Command::NewGroups {
+            date: "20240101".to_string(),
+            time: "120000".to_string(),
+            gmt: true,
+            distributions: None,
+        };
+        let encoded = cmd.encode().unwrap();
+        assert_eq!(encoded, b"NEWGROUPS 20240101 120000 GMT\r\n");
+    }
+
+    #[test]
+    fn test_newgroups_with_distributions() {
+        let cmd = Command::NewGroups {
+            date: "20240101".to_string(),
+            time: "120000".to_string(),
+            gmt: true,
+            distributions: Some("local".to_string()),
+        };
+        let encoded = cmd.encode().unwrap();
+        assert_eq!(encoded, b"NEWGROUPS 20240101 120000 GMT local\r\n");
+    }
+
+    #[test]
+    fn test_newnews_no_gmt() {
+        let cmd = Command::NewNews {
+            wildmat: "*".to_string(),
+            date: "20240101".to_string(),
+            time: "120000".to_string(),
+            gmt: false,
+        };
+        let encoded = cmd.encode().unwrap();
+        assert_eq!(encoded, b"NEWNEWS * 20240101 120000\r\n");
+    }
+
+    #[test]
+    fn test_newnews_with_gmt() {
+        let cmd = Command::NewNews {
+            wildmat: "comp.*".to_string(),
+            date: "20240101".to_string(),
+            time: "120000".to_string(),
+            gmt: true,
+        };
+        let encoded = cmd.encode().unwrap();
+        assert_eq!(encoded, b"NEWNEWS comp.* 20240101 120000 GMT\r\n");
+    }
+
+    #[test]
+    fn test_post_command() {
+        let cmd = Command::Post;
+        let encoded = cmd.encode().unwrap();
+        assert_eq!(encoded, b"POST\r\n");
+    }
+
+    #[test]
+    fn test_quit_command() {
+        let cmd = Command::Quit;
+        let encoded = cmd.encode().unwrap();
+        assert_eq!(encoded, b"QUIT\r\n");
+    }
+
+    #[test]
+    fn test_invalid_message_id_no_brackets() {
+        let cmd = Command::Article(ArticleSpec::MessageId("test@example.com".to_string()));
+        let result = cmd.encode();
+        assert!(result.is_err());
+        if let Err(Error::InvalidCommand(msg)) = result {
+            assert!(msg.contains("angle brackets"));
+        } else {
+            panic!("Expected InvalidCommand error");
+        }
+    }
+
+    #[test]
+    fn test_empty_parameter_error() {
+        let cmd = Command::Group(String::new());
+        let result = cmd.encode();
+        assert!(result.is_err());
+        if let Err(Error::InvalidCommand(msg)) = result {
+            assert!(msg.contains("empty"));
+        } else {
+            panic!("Expected InvalidCommand error for empty parameter");
+        }
+    }
+
+    #[test]
+    fn test_command_too_long() {
+        // Create a command that exceeds 510 bytes
+        let long_param = "x".repeat(600);
+        let cmd = Command::Group(long_param);
+        let result = cmd.encode();
+        assert!(result.is_err());
+        if let Err(Error::InvalidCommand(msg)) = result {
+            assert!(msg.contains("maximum length"));
+        } else {
+            panic!("Expected InvalidCommand error for long command");
+        }
+    }
+
+    #[test]
+    fn test_parameter_with_newline() {
+        let cmd = Command::Group("misc.test\nQUIT".to_string());
+        let result = cmd.encode();
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_list_active_with_invalid_pattern() {
+        let cmd = Command::List(ListVariant::Active(Some("comp.*\r\nQUIT".to_string())));
+        let result = cmd.encode();
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_hdr_with_invalid_field() {
+        let cmd = Command::Hdr {
+            field: "Subject\r\n".to_string(),
+            range: None,
+        };
+        let result = cmd.encode();
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_hdr_with_invalid_range() {
+        let cmd = Command::Hdr {
+            field: "Subject".to_string(),
+            range: Some("1-10\r\nQUIT".to_string()),
+        };
+        let result = cmd.encode();
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_over_with_invalid_range() {
+        let cmd = Command::Over {
+            range: Some("1-10\r\n".to_string()),
+        };
+        let result = cmd.encode();
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_auth_user_invalid() {
+        let cmd = Command::AuthInfoUser("user\r\n".to_string());
+        assert!(cmd.encode().is_err());
+    }
+
+    #[test]
+    fn test_auth_pass_invalid() {
+        let cmd = Command::AuthInfoPass("pass\r\n".to_string());
+        assert!(cmd.encode().is_err());
+    }
+
+    #[test]
+    fn test_listgroup_invalid_range() {
+        let cmd = Command::ListGroup(Some("misc.test\r\n".to_string()));
+        assert!(cmd.encode().is_err());
+    }
+
+    #[test]
+    fn test_newgroups_invalid_date() {
+        let cmd = Command::NewGroups {
+            date: "2024\r\n0101".to_string(),
+            time: "120000".to_string(),
+            gmt: false,
+            distributions: None,
+        };
+        assert!(cmd.encode().is_err());
+    }
+
+    #[test]
+    fn test_newgroups_invalid_time() {
+        let cmd = Command::NewGroups {
+            date: "20240101".to_string(),
+            time: "12\r\n0000".to_string(),
+            gmt: false,
+            distributions: None,
+        };
+        assert!(cmd.encode().is_err());
+    }
+
+    #[test]
+    fn test_newgroups_invalid_distributions() {
+        let cmd = Command::NewGroups {
+            date: "20240101".to_string(),
+            time: "120000".to_string(),
+            gmt: false,
+            distributions: Some("local\r\n".to_string()),
+        };
+        assert!(cmd.encode().is_err());
+    }
+
+    #[test]
+    fn test_newnews_invalid_wildmat() {
+        let cmd = Command::NewNews {
+            wildmat: "*\r\n".to_string(),
+            date: "20240101".to_string(),
+            time: "120000".to_string(),
+            gmt: false,
+        };
+        assert!(cmd.encode().is_err());
+    }
+
+    #[test]
+    fn test_ihave_invalid_message_id_no_brackets() {
+        let cmd = Command::Ihave {
+            message_id: "article@example.com".to_string(),
+        };
+        let result = cmd.encode();
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_ihave_invalid_message_id_with_newline() {
+        let cmd = Command::Ihave {
+            message_id: "<article@example.com\r\n>".to_string(),
+        };
+        let result = cmd.encode();
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_list_newsgroups_invalid_pattern() {
+        let cmd = Command::List(ListVariant::Newsgroups(Some("alt.*\r\n".to_string())));
+        assert!(cmd.encode().is_err());
+    }
+
+    #[test]
+    fn test_list_basic_invalid_pattern() {
+        let cmd = Command::List(ListVariant::Basic(Some("misc.*\r\n".to_string())));
+        assert!(cmd.encode().is_err());
     }
 }
