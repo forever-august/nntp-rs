@@ -40,6 +40,12 @@ pub enum Error {
         feature = "smol-runtime"
     ))]
     Connection(String),
+
+    /// Error building an article for posting
+    ArticleBuilder(String),
+
+    /// Thread not found
+    ThreadNotFound(String),
 }
 
 impl fmt::Display for Error {
@@ -61,6 +67,8 @@ impl fmt::Display for Error {
                 feature = "smol-runtime"
             ))]
             Error::Connection(msg) => write!(f, "Connection error: {msg}"),
+            Error::ArticleBuilder(msg) => write!(f, "Article builder error: {msg}"),
+            Error::ThreadNotFound(msg) => write!(f, "Thread not found: {msg}"),
         }
     }
 }
@@ -75,5 +83,90 @@ impl std::error::Error for Error {}
 impl From<std::io::Error> for Error {
     fn from(err: std::io::Error) -> Self {
         Error::Io(err.to_string())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_error_display_invalid_response() {
+        let err = Error::InvalidResponse("test message".to_string());
+        assert_eq!(format!("{}", err), "Invalid response: test message");
+    }
+
+    #[test]
+    fn test_error_display_protocol() {
+        let err = Error::Protocol {
+            code: 411,
+            message: "No such newsgroup".to_string(),
+        };
+        assert_eq!(format!("{}", err), "Protocol error 411: No such newsgroup");
+    }
+
+    #[test]
+    fn test_error_display_parse() {
+        let err = Error::Parse("invalid format".to_string());
+        assert_eq!(format!("{}", err), "Parse error: invalid format");
+    }
+
+    #[test]
+    fn test_error_display_invalid_command() {
+        let err = Error::InvalidCommand("bad command".to_string());
+        assert_eq!(format!("{}", err), "Invalid command: bad command");
+    }
+
+    #[test]
+    fn test_error_display_article_builder() {
+        let err = Error::ArticleBuilder("missing field".to_string());
+        assert_eq!(format!("{}", err), "Article builder error: missing field");
+    }
+
+    #[test]
+    fn test_error_display_thread_not_found() {
+        let err = Error::ThreadNotFound("thread123".to_string());
+        assert_eq!(format!("{}", err), "Thread not found: thread123");
+    }
+
+    #[cfg(any(
+        feature = "tokio-runtime",
+        feature = "async-std-runtime",
+        feature = "smol-runtime"
+    ))]
+    #[test]
+    fn test_error_display_io() {
+        let err = Error::Io("connection refused".to_string());
+        assert_eq!(format!("{}", err), "I/O error: connection refused");
+    }
+
+    #[cfg(any(
+        feature = "tokio-runtime",
+        feature = "async-std-runtime",
+        feature = "smol-runtime"
+    ))]
+    #[test]
+    fn test_error_display_connection() {
+        let err = Error::Connection("timeout".to_string());
+        assert_eq!(format!("{}", err), "Connection error: timeout");
+    }
+
+    #[cfg(any(
+        feature = "tokio-runtime",
+        feature = "async-std-runtime",
+        feature = "smol-runtime"
+    ))]
+    #[test]
+    fn test_error_from_io_error() {
+        let io_err = std::io::Error::new(std::io::ErrorKind::NotFound, "file not found");
+        let err: Error = io_err.into();
+        assert!(matches!(err, Error::Io(_)));
+        assert!(format!("{}", err).contains("file not found"));
+    }
+
+    #[test]
+    fn test_error_is_std_error() {
+        let err: &dyn std::error::Error = &Error::Parse("test".to_string());
+        assert!(err.to_string().contains("Parse error"));
     }
 }
