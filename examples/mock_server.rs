@@ -39,7 +39,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         ),
         // Client retrieves an article
         (
-            Command::Article(ArticleSpec::Number(1)),
+            Command::Article(ArticleSpec::number_in_group("comp.lang.rust", 1)),
             Response::Article {
                 number: Some(1),
                 message_id: "<test@example.com>".to_string(),
@@ -88,7 +88,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Current group: {:?}", test.client().current_group());
 
     println!("\n4. Testing article retrieval:");
-    let response = test.send_command(Command::Article(ArticleSpec::Number(1)))?;
+    let response = test.send_command(Command::Article(ArticleSpec::number_in_group(
+        "comp.lang.rust",
+        1,
+    )))?;
     match response {
         Response::Article {
             number,

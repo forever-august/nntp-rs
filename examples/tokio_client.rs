@@ -10,7 +10,7 @@
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     #[allow(unused_imports)]
-    use nntp_rs::tokio::NntpClient;
+    use nntp_rs::runtime::tokio::NntpClient;
 
     println!("=== NNTP Tokio Example ===\n");
 
