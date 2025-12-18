@@ -1086,7 +1086,7 @@ mod tests {
         if let Response::Article { number, message_id, content } = parsed {
             assert_eq!(number, Some(123));
             assert_eq!(message_id, "<test@example.com>");
-            assert!(content.len() > 0);
+            assert!(!content.is_empty());
         } else {
             panic!("Expected Article response");
         }

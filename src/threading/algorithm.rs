@@ -138,83 +138,116 @@ fn is_ancestor_present(
 }
 
 /// Get the subject for a thread, finding the first non-placeholder article.
+///
+/// Uses iterative traversal to support arbitrarily deep threads without stack overflow.
 fn get_thread_subject(node: &ThreadNode) -> String {
-    if let Some(ref article) = node.article {
-        return normalize_subject(&article.subject);
-    }
-    // For placeholder roots, use the first reply's subject
-    for reply in &node.replies {
-        let subject = get_thread_subject(reply);
-        if !subject.is_empty() {
-            return subject;
+    let mut stack = vec![node];
+    while let Some(current) = stack.pop() {
+        if let Some(ref article) = current.article {
+            return normalize_subject(&article.subject);
+        }
+        // Push replies in reverse order so they're processed left-to-right
+        for reply in current.replies.iter().rev() {
+            stack.push(reply);
         }
     }
     String::new()
 }
 
 /// Build a thread node from a real article.
+///
+/// Uses iterative traversal to support arbitrarily deep threads without stack overflow.
 fn build_thread_node_from_article(
     article: ThreadedArticleRef,
     id_to_article: &mut HashMap<String, ThreadedArticleRef>,
     children: &HashMap<String, Vec<String>>,
 ) -> ThreadNode {
-    let message_id = article.message_id.clone();
-    let mut replies = Vec::new();
+    let root_id = article.message_id.clone();
 
-    if let Some(child_ids) = children.get(&message_id) {
-        for child_id in child_ids {
-            if let Some(child_article) = id_to_article.remove(child_id) {
-                let child_node =
-                    build_thread_node_from_article(child_article, id_to_article, children);
-                replies.push(child_node);
-            }
-        }
-    }
+    // Put the root article back temporarily so we can process uniformly
+    id_to_article.insert(root_id.clone(), article);
 
-    // Sort replies by date (ascending - oldest first)
-    replies.sort_by(|a, b| {
-        let a_date = a.article.as_ref().map(|a| a.date.as_str()).unwrap_or("");
-        let b_date = b.article.as_ref().map(|a| a.date.as_str()).unwrap_or("");
-        a_date.cmp(b_date)
-    });
-
-    ThreadNode {
-        article: Some(article),
-        replies,
-        message_id,
-    }
+    build_thread_node_iterative(&root_id, id_to_article, children)
 }
 
 /// Build a thread node from a placeholder (missing article).
+///
+/// Uses iterative traversal to support arbitrarily deep threads without stack overflow.
 fn build_thread_node_from_placeholder(
     message_id: &str,
     id_to_article: &mut HashMap<String, ThreadedArticleRef>,
     children: &HashMap<String, Vec<String>>,
 ) -> ThreadNode {
-    let mut replies = Vec::new();
+    build_thread_node_iterative(message_id, id_to_article, children)
+}
 
-    if let Some(child_ids) = children.get(message_id) {
-        for child_id in child_ids {
-            if let Some(child_article) = id_to_article.remove(child_id) {
-                let child_node =
-                    build_thread_node_from_article(child_article, id_to_article, children);
-                replies.push(child_node);
+/// Iteratively build a thread node and all its descendants.
+///
+/// This function builds the tree bottom-up to avoid stack overflow on deeply nested threads.
+fn build_thread_node_iterative(
+    root_id: &str,
+    id_to_article: &mut HashMap<String, ThreadedArticleRef>,
+    children: &HashMap<String, Vec<String>>,
+) -> ThreadNode {
+    // Phase 1: Collect all nodes to build using iterative traversal
+    // Store (message_id, depth) pairs, we'll process deepest first
+    let mut nodes_to_build: Vec<(String, usize)> = Vec::new();
+    let mut stack: Vec<(String, usize)> = vec![(root_id.to_string(), 0)];
+
+    while let Some((msg_id, depth)) = stack.pop() {
+        nodes_to_build.push((msg_id.clone(), depth));
+
+        // Add children to the stack
+        if let Some(child_ids) = children.get(&msg_id) {
+            for child_id in child_ids {
+                // Only process if the child exists in our article set
+                if id_to_article.contains_key(child_id) {
+                    stack.push((child_id.clone(), depth + 1));
+                }
             }
         }
     }
 
-    // Sort replies by date (ascending - oldest first)
-    replies.sort_by(|a, b| {
-        let a_date = a.article.as_ref().map(|a| a.date.as_str()).unwrap_or("");
-        let b_date = b.article.as_ref().map(|a| a.date.as_str()).unwrap_or("");
-        a_date.cmp(b_date)
-    });
+    // Phase 2: Sort by depth (deepest first) to build bottom-up
+    nodes_to_build.sort_by(|a, b| b.1.cmp(&a.1));
 
-    ThreadNode {
-        article: None,
-        replies,
-        message_id: message_id.to_string(),
+    // Phase 3: Build nodes bottom-up, storing completed nodes
+    let mut built_nodes: HashMap<String, ThreadNode> = HashMap::new();
+
+    for (msg_id, _depth) in nodes_to_build {
+        // Collect child nodes that we've already built
+        let mut replies: Vec<ThreadNode> = Vec::new();
+        if let Some(child_ids) = children.get(&msg_id) {
+            for child_id in child_ids {
+                if let Some(child_node) = built_nodes.remove(child_id) {
+                    replies.push(child_node);
+                }
+            }
+        }
+
+        // Sort replies by date (ascending - oldest first)
+        replies.sort_by(|a, b| {
+            let a_date = a.article.as_ref().map(|a| a.date.as_str()).unwrap_or("");
+            let b_date = b.article.as_ref().map(|a| a.date.as_str()).unwrap_or("");
+            a_date.cmp(b_date)
+        });
+
+        // Create the node
+        let node = ThreadNode {
+            article: id_to_article.remove(&msg_id),
+            replies,
+            message_id: msg_id.clone(),
+        };
+
+        built_nodes.insert(msg_id, node);
     }
+
+    // Return the root node
+    built_nodes.remove(root_id).unwrap_or_else(|| ThreadNode {
+        article: None,
+        replies: Vec::new(),
+        message_id: root_id.to_string(),
+    })
 }
 
 /// Normalize a subject line by removing Re:, Fwd:, etc. prefixes.
@@ -528,7 +561,7 @@ mod tests {
         let collection = build_threads(articles, "test.group");
         // The grandchild has a missing parent, so it becomes a separate orphan thread
         // or attached to grandparent depending on algorithm behavior
-        assert!(collection.len() >= 1);
+        assert!(!collection.is_empty());
         // Total articles should include both
         assert!(collection.total_articles() >= 1);
     }
@@ -576,5 +609,105 @@ mod tests {
         assert_eq!(collection.len(), 1);
         // Thread subject comes from the first non-placeholder article
         assert_eq!(collection.threads()[0].subject(), "Missing Parent");
+    }
+
+    #[test]
+    fn test_build_threads_deeply_nested() {
+        // Test that deeply nested threads don't cause stack overflow
+        // This creates a thread 1000 levels deep, which would overflow the stack
+        // if using recursive algorithms with typical stack sizes
+        const DEPTH: usize = 1000;
+
+        let mut articles = Vec::with_capacity(DEPTH);
+
+        // Create root article
+        articles.push(make_article("<root@x.com>", "Deep Thread", "2024-01-01", None));
+
+        // Create a chain of replies, each replying to the previous
+        for i in 1..DEPTH {
+            let message_id = format!("<reply{}@x.com>", i);
+            let parent_id = if i == 1 {
+                "<root@x.com>".to_string()
+            } else {
+                format!("<reply{}@x.com>", i - 1)
+            };
+            articles.push(ThreadedArticleRef {
+                message_id: message_id.clone(),
+                number: Some(i as u64 + 1),
+                subject: format!("Re: Deep Thread {}", i),
+                from: "test@example.com".to_string(),
+                date: format!("2024-01-{:02}", (i % 28) + 1),
+                parent_id: Some(parent_id.clone()),
+                references: vec![parent_id],
+                byte_count: Some(100),
+                line_count: Some(10),
+            });
+        }
+
+        let collection = build_threads(articles, "test.group");
+
+        // Verify the thread was built correctly
+        assert_eq!(collection.len(), 1);
+        let thread = &collection.threads()[0];
+        assert_eq!(thread.article_count(), DEPTH);
+        assert_eq!(thread.max_depth(), DEPTH - 1);
+        assert_eq!(thread.subject(), "Deep Thread");
+
+        // Verify we can find articles at various depths
+        assert!(thread.find_by_message_id("<root@x.com>").is_some());
+        assert!(thread.find_by_message_id("<reply1@x.com>").is_some());
+        assert!(thread
+            .find_by_message_id(&format!("<reply{}@x.com>", DEPTH - 1))
+            .is_some());
+
+        // Verify iteration works
+        let all_ids: Vec<&str> = thread.iter().map(|a| a.message_id.as_str()).collect();
+        assert_eq!(all_ids.len(), DEPTH);
+    }
+
+    #[test]
+    fn test_build_threads_wide_and_deep() {
+        // Test a thread that is both wide (many siblings) and deep
+        const WIDTH: usize = 10;
+        const DEPTH: usize = 100;
+
+        let mut articles = Vec::new();
+
+        // Create root
+        articles.push(make_article("<root@x.com>", "Wide and Deep", "2024-01-01", None));
+
+        // Create WIDTH chains of DEPTH replies each
+        for chain in 0..WIDTH {
+            let chain_prefix = format!("chain{}", chain);
+            for depth in 0..DEPTH {
+                let message_id = format!("<{}-{}@x.com>", chain_prefix, depth);
+                let parent_id = if depth == 0 {
+                    "<root@x.com>".to_string()
+                } else {
+                    format!("<{}-{}@x.com>", chain_prefix, depth - 1)
+                };
+                articles.push(ThreadedArticleRef {
+                    message_id,
+                    number: Some((chain * DEPTH + depth + 2) as u64),
+                    subject: "Re: Wide and Deep".to_string(),
+                    from: "test@example.com".to_string(),
+                    date: format!("2024-01-{:02}", (depth % 28) + 1),
+                    parent_id: Some(parent_id.clone()),
+                    references: vec![parent_id],
+                    byte_count: Some(100),
+                    line_count: Some(10),
+                });
+            }
+        }
+
+        let collection = build_threads(articles, "test.group");
+
+        assert_eq!(collection.len(), 1);
+        let thread = &collection.threads()[0];
+        assert_eq!(thread.article_count(), 1 + WIDTH * DEPTH);
+        assert_eq!(thread.root().reply_count(), WIDTH);
+
+        // Each chain should have depth DEPTH - 1 (from first reply to last)
+        assert_eq!(thread.max_depth(), DEPTH);
     }
 }

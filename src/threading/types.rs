@@ -133,50 +133,71 @@ impl ThreadNode {
     }
 
     /// Find a node by Message-ID in this subtree.
+    ///
+    /// Uses iterative traversal to support arbitrarily deep threads without stack overflow.
     pub fn find_by_message_id(&self, message_id: &str) -> Option<&ThreadNode> {
-        if self.message_id == message_id {
-            return Some(self);
-        }
-        for reply in &self.replies {
-            if let Some(found) = reply.find_by_message_id(message_id) {
-                return Some(found);
+        let mut stack = vec![self];
+        while let Some(node) = stack.pop() {
+            if node.message_id == message_id {
+                return Some(node);
+            }
+            // Push replies in reverse order so they're processed left-to-right
+            for reply in node.replies.iter().rev() {
+                stack.push(reply);
             }
         }
         None
     }
 
     /// Count all present articles in this subtree (excluding placeholders).
+    ///
+    /// Uses iterative traversal to support arbitrarily deep threads without stack overflow.
     pub fn count_articles(&self) -> usize {
-        let self_count = if self.article.is_some() { 1 } else { 0 };
-        self_count
-            + self
-                .replies
-                .iter()
-                .map(|r| r.count_articles())
-                .sum::<usize>()
+        let mut count = 0;
+        let mut stack = vec![self];
+        while let Some(node) = stack.pop() {
+            if node.article.is_some() {
+                count += 1;
+            }
+            for reply in &node.replies {
+                stack.push(reply);
+            }
+        }
+        count
     }
 
     /// Count all nodes in this subtree (including placeholders).
+    ///
+    /// Uses iterative traversal to support arbitrarily deep threads without stack overflow.
     pub fn count_nodes(&self) -> usize {
-        1 + self
-            .replies
-            .iter()
-            .map(|r| r.count_nodes())
-            .sum::<usize>()
+        let mut count = 0;
+        let mut stack = vec![self];
+        while let Some(node) = stack.pop() {
+            count += 1;
+            for reply in &node.replies {
+                stack.push(reply);
+            }
+        }
+        count
     }
 
     /// Get the maximum depth of the subtree (0 if no replies).
+    ///
+    /// Uses iterative traversal to support arbitrarily deep threads without stack overflow.
     pub fn max_depth(&self) -> usize {
-        if self.replies.is_empty() {
-            0
-        } else {
-            1 + self
-                .replies
-                .iter()
-                .map(|r| r.max_depth())
-                .max()
-                .unwrap_or(0)
+        let mut max_depth = 0;
+        // Stack contains (node, current_depth)
+        let mut stack = vec![(self, 0usize)];
+        while let Some((node, depth)) = stack.pop() {
+            if node.replies.is_empty() {
+                max_depth = max_depth.max(depth);
+            } else {
+                for reply in &node.replies {
+                    stack.push((reply, depth + 1));
+                }
+            }
         }
+        max_depth
     }
 }
 
@@ -194,11 +215,17 @@ pub struct Thread {
     subject: String,
 }
 
-/// Recursively collect message IDs from a thread node (including placeholders).
+/// Collect message IDs from a thread node (including placeholders).
+///
+/// Uses iterative traversal to support arbitrarily deep threads without stack overflow.
 fn collect_message_ids<'a>(node: &'a ThreadNode, ids: &mut Vec<&'a str>) {
-    ids.push(&node.message_id);
-    for reply in &node.replies {
-        collect_message_ids(reply, ids);
+    let mut stack = vec![node];
+    while let Some(current) = stack.pop() {
+        ids.push(&current.message_id);
+        // Push replies in reverse order so they're processed left-to-right
+        for reply in current.replies.iter().rev() {
+            stack.push(reply);
+        }
     }
 }
 
