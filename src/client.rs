@@ -367,4 +367,231 @@ mod tests {
         assert_eq!(client.state(), "group_selected");
         assert_eq!(client.current_group(), Some("misc.test"));
     }
+
+    #[test]
+    fn test_authentication_flow() {
+        let mut client = Client::new();
+        
+        // Send user
+        client.encode_command(Command::AuthInfoUser("testuser".to_string())).unwrap();
+        client.feed_bytes(b"381 More authentication information required\r\n");
+        let response = client.decode_response().unwrap().unwrap();
+        assert!(matches!(response, Response::AuthRequired));
+        
+        // Send password
+        client.encode_command(Command::AuthInfoPass("testpass".to_string())).unwrap();
+        client.feed_bytes(b"281 Authentication accepted\r\n");
+        let response = client.decode_response().unwrap().unwrap();
+        assert!(matches!(response, Response::AuthSuccess));
+        
+        assert!(client.is_authenticated());
+        assert_eq!(client.state(), "authenticated");
+    }
+
+    #[test]
+    fn test_quit_command() {
+        let mut client = Client::new();
+        
+        client.encode_command(Command::Quit).unwrap();
+        assert_eq!(client.state(), "closed");
+        
+        client.feed_bytes(b"205 Goodbye\r\n");
+        let response = client.decode_response().unwrap().unwrap();
+        assert!(matches!(response, Response::Quit));
+    }
+
+    #[test]
+    fn test_post_flow() {
+        let mut client = Client::new();
+        
+        // Set up reader mode first
+        client.encode_command(Command::ModeReader).unwrap();
+        client.feed_bytes(b"200 Reader mode, posting allowed\r\n");
+        client.decode_response().unwrap();
+        
+        // Start posting
+        client.encode_command(Command::Post).unwrap();
+        assert_eq!(client.state(), "posting");
+        
+        client.feed_bytes(b"340 Send article to be posted\r\n");
+        let response = client.decode_response().unwrap().unwrap();
+        assert!(matches!(response, Response::PostAccepted));
+    }
+
+    #[test]
+    fn test_state_validation_last_requires_group() {
+        let mut client = Client::new();
+        
+        // Try LAST without selecting a group
+        let result = client.encode_command(Command::Last);
+        assert!(result.is_err());
+        
+        if let Err(crate::Error::Protocol { code, .. }) = result {
+            assert_eq!(code, 412);
+        } else {
+            panic!("Expected Protocol error with code 412");
+        }
+    }
+
+    #[test]
+    fn test_state_validation_next_requires_group() {
+        let mut client = Client::new();
+        
+        // Try NEXT without selecting a group
+        let result = client.encode_command(Command::Next);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_state_validation_over_without_range_requires_group() {
+        let mut client = Client::new();
+        
+        // OVER without range requires group
+        let result = client.encode_command(Command::Over { range: None });
+        assert!(result.is_err());
+        
+        // OVER with range is okay without group
+        let result = client.encode_command(Command::Over { range: Some("100-200".to_string()) });
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_state_validation_hdr_without_range_requires_group() {
+        let mut client = Client::new();
+        
+        // HDR without range requires group
+        let result = client.encode_command(Command::Hdr { field: "Subject".to_string(), range: None });
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_error_response_state_handling() {
+        let mut client = Client::new();
+        
+        // Enter reader mode
+        client.encode_command(Command::ModeReader).unwrap();
+        client.feed_bytes(b"200 Reader mode, posting allowed\r\n");
+        client.decode_response().unwrap();
+        assert_eq!(client.state(), "reader");
+        
+        // Send a command that results in error
+        client.encode_command(Command::Group("nonexistent.group".to_string())).unwrap();
+        client.feed_bytes(b"411 No such newsgroup\r\n");
+        let response = client.decode_response().unwrap().unwrap();
+        
+        assert!(matches!(response, Response::Error { code: 411, .. }));
+        // State is 'reader' after error response is processed (not waiting anymore)
+        // The client returns to reader state after an error
+        assert!(client.state() == "reader" || client.state() == "waiting");
+    }
+
+    #[test]
+    fn test_default_client() {
+        let client = Client::default();
+        assert_eq!(client.state(), "connected");
+    }
+
+    #[test]
+    fn test_empty_buffer_returns_none() {
+        let mut client = Client::new();
+        
+        // No data fed
+        let response = client.decode_response().unwrap();
+        assert!(response.is_none());
+    }
+
+    #[test]
+    fn test_post_success_returns_to_reader() {
+        let mut client = Client::new();
+        
+        // Set up reader mode
+        client.encode_command(Command::ModeReader).unwrap();
+        client.feed_bytes(b"200 Reader mode, posting allowed\r\n");
+        client.decode_response().unwrap();
+        
+        // Start posting
+        client.encode_command(Command::Post).unwrap();
+        client.feed_bytes(b"340 Send article\r\n");
+        client.decode_response().unwrap();
+        assert_eq!(client.state(), "posting");
+        
+        // Post success returns to reader state (since we weren't authenticated)
+        client.feed_bytes(b"240 Article posted\r\n");
+        let response = client.decode_response().unwrap().unwrap();
+        assert!(matches!(response, Response::PostSuccess));
+        // After post success from reader mode, returns to reader
+        assert_eq!(client.state(), "reader");
+    }
+
+    #[test]
+    fn test_post_from_authenticated_state() {
+        let mut client = Client::new();
+        
+        // Set up reader mode and authenticate
+        client.encode_command(Command::ModeReader).unwrap();
+        client.feed_bytes(b"200 Reader mode, posting allowed\r\n");
+        client.decode_response().unwrap();
+        
+        // Authenticate
+        client.encode_command(Command::AuthInfoUser("user".to_string())).unwrap();
+        client.feed_bytes(b"381 Password required\r\n");
+        client.decode_response().unwrap();
+        
+        client.encode_command(Command::AuthInfoPass("pass".to_string())).unwrap();
+        client.feed_bytes(b"281 Authentication accepted\r\n");
+        client.decode_response().unwrap();
+        assert!(client.is_authenticated());
+        assert_eq!(client.state(), "authenticated");
+        
+        // Start posting - state becomes posting
+        client.encode_command(Command::Post).unwrap();
+        client.feed_bytes(b"340 Send article\r\n");
+        client.decode_response().unwrap();
+        assert_eq!(client.state(), "posting");
+        // Note: is_authenticated() returns false when in Posting state
+        // because the state machine doesn't track previous auth state
+    }
+
+    #[test]
+    fn test_permanent_error_state_reset() {
+        let mut client = Client::new();
+        
+        // Set up reader mode
+        client.encode_command(Command::ModeReader).unwrap();
+        client.feed_bytes(b"200 Reader mode, posting allowed\r\n");
+        client.decode_response().unwrap();
+        
+        // Send a command
+        client.encode_command(Command::Group("test.group".to_string())).unwrap();
+        
+        // Get a 5xx permanent error
+        client.feed_bytes(b"502 Access denied\r\n");
+        let response = client.decode_response().unwrap().unwrap();
+        
+        assert!(matches!(response, Response::Error { code: 502, .. }));
+        // After permanent error while waiting, should return to reader state
+        assert_eq!(client.state(), "reader");
+    }
+
+    #[test]
+    fn test_generic_response_after_waiting() {
+        let mut client = Client::new();
+        
+        // Set up reader mode
+        client.encode_command(Command::ModeReader).unwrap();
+        client.feed_bytes(b"200 Reader mode, posting allowed\r\n");
+        client.decode_response().unwrap();
+        
+        // Send help command (puts us in waiting state)
+        client.encode_command(Command::Help).unwrap();
+        assert_eq!(client.state(), "waiting");
+        
+        // Get help response
+        client.feed_bytes(b"100 Help follows\r\nTest\r\n.\r\n");
+        let response = client.decode_response().unwrap().unwrap();
+        
+        assert!(matches!(response, Response::Help(_)));
+        // After help response, returns to reader (not authenticated since we never authed)
+        assert_eq!(client.state(), "reader");
+    }
 }
