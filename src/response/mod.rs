@@ -1,62 +1,25 @@
 //! NNTP response types and parsing.
+//!
+//! This module provides types and parsing for NNTP server responses.
+//!
+//! # Module Structure
+//!
+//! - [`article`] - Article-related types ([`Article`], [`Attachment`])
+//! - [`metadata`] - Newsgroup metadata types ([`NewsGroup`], [`OverviewEntry`], [`HeaderEntry`])
+//! - [`wrappers`] - Newtype wrappers for type-safe response extraction
+
+mod article;
+mod metadata;
+pub mod wrappers;
+
+pub use article::{Article, Attachment};
+#[allow(deprecated)]
+pub use article::ParsedArticle;
+pub use metadata::{HeaderEntry, NewsGroup, OverviewEntry};
+pub use wrappers::*;
 
 use crate::error::{Error, Result};
 use mail_parser::{Message, MessageParser};
-use std::str;
-
-/// Parsed article content that owns its data
-///
-/// This type provides structured access to NNTP article content through
-/// the mail_parser Message interface while owning the underlying data.
-#[derive(Debug, Clone)]
-pub struct ParsedArticle {
-    /// Article number
-    pub number: Option<u64>,
-    /// Message-ID  
-    pub message_id: String,
-    /// Raw article content
-    content: Vec<u8>,
-}
-
-impl ParsedArticle {
-    /// Create a new ParsedArticle from article response data
-    pub fn new(number: Option<u64>, message_id: String, content: Vec<u8>) -> Self {
-        Self {
-            number,
-            message_id,
-            content,
-        }
-    }
-
-    /// Get parsed message interface
-    pub fn message(&self) -> Option<Message<'_>> {
-        MessageParser::default().parse(&self.content)
-    }
-
-    /// Get article subject
-    pub fn subject(&self) -> Option<String> {
-        self.message()?.subject().map(|s| s.to_string())
-    }
-
-    /// Get article sender
-    pub fn from(&self) -> Option<String> {
-        self.message()?
-            .from()?
-            .first()?
-            .address()
-            .map(|s| s.to_string())
-    }
-
-    /// Get article body text
-    pub fn body_text(&self) -> Option<String> {
-        self.message()?.body_text(0).map(|s| s.to_string())
-    }
-
-    /// Get raw article content
-    pub fn raw_content(&self) -> &[u8] {
-        &self.content
-    }
-}
 
 /// NNTP server responses
 #[derive(Debug, Clone, PartialEq)]
@@ -159,178 +122,46 @@ pub enum Response {
         message: String,
     },
 
-    // RFC 3977 specific error responses
-    /// Service discontinued (400)
-    ServiceDiscontinued {
-        /// Error message from server
-        message: String,
-    },
-
-    /// No such newsgroup (411)
-    NoSuchNewsgroup {
-        /// Error message from server
-        message: String,
-    },
-
-    /// No newsgroup has been selected (412)
-    NoNewsgroupSelected {
-        /// Error message from server
-        message: String,
-    },
-
-    /// No current article has been selected (420)
-    NoCurrentArticle {
-        /// Error message from server
-        message: String,
-    },
-
-    /// No next article in this group (421)
-    NoNextArticle {
-        /// Error message from server
-        message: String,
-    },
-
-    /// No previous article in this group (422)
-    NoPreviousArticle {
-        /// Error message from server
-        message: String,
-    },
-
-    /// No such article found (430)
-    NoSuchArticle {
-        /// Error message from server
-        message: String,
-    },
-
-    /// Authentication required (480)
-    AuthenticationRequired {
-        /// Error message from server
-        message: String,
-    },
-
-    /// Command not recognized (500)
-    CommandNotRecognized {
-        /// Error message from server
-        message: String,
-    },
-
-    /// Command syntax error (501)
-    CommandSyntaxError {
-        /// Error message from server
-        message: String,
-    },
-
-    /// Access restriction or permission denied (502)
-    AccessDenied {
-        /// Error message from server
-        message: String,
-    },
-
-    /// Program fault - command not performed (503)
-    ProgramFault {
-        /// Error message from server
-        message: String,
-    },
-
-    /// Protocol error response (4xx/5xx) - for unspecific errors
+    /// Protocol error response (4xx/5xx codes).
+    ///
+    /// Use helper methods like `is_no_such_newsgroup()`, `is_auth_required()` etc.
+    /// to check for specific error conditions.
     Error {
         /// Error code
         code: u16,
         /// Error message
         message: String,
     },
-}
 
-/// Header entry for HDR command response
-#[derive(Debug, Clone, PartialEq)]
-pub struct HeaderEntry {
-    /// Article number or message ID
-    pub article: String,
-    /// Header field value
-    pub value: String,
-}
+    // RFC 4642 (STARTTLS) responses
 
-/// Overview entry for OVER command response
-#[derive(Debug, Clone, PartialEq)]
-pub struct OverviewEntry {
-    /// Raw tab-separated fields from the OVER response
-    pub fields: Vec<String>,
-}
+    /// TLS negotiation may begin (382 response).
+    ///
+    /// After receiving this response, the client should immediately begin
+    /// TLS negotiation on the underlying connection. This library provides
+    /// protocol-level support but does not perform the actual TLS handshake.
+    ///
+    /// # Usage
+    ///
+    /// When using the sans-IO layer:
+    ///
+    /// 1. Send [`Command::StartTls`]
+    /// 2. Receive this `TlsReady` response
+    /// 3. Wrap the underlying stream with a TLS implementation (e.g., `rustls`, `native-tls`)
+    /// 4. Continue NNTP protocol communication over the encrypted connection
+    ///
+    /// [`Command::StartTls`]: crate::command::Command::StartTls
+    TlsReady,
 
-impl OverviewEntry {
-    /// Get article number (always the first field)
-    pub fn number(&self) -> Option<u64> {
-        self.fields.first()?.parse().ok()
-    }
-
-    /// Get field at specific index
-    pub fn get_field(&self, index: usize) -> Option<&str> {
-        self.fields.get(index).map(|s| s.as_str())
-    }
-
-    /// Get field by name (requires field format knowledge)
-    /// This is a helper that assumes the default RFC 3977 format
-    pub fn get_default_field(&self, field_name: &str) -> Option<&str> {
-        let index = match field_name.to_lowercase().as_str() {
-            "subject" => 1,
-            "from" => 2,
-            "date" => 3,
-            "message-id" => 4,
-            "references" => 5,
-            "byte_count" | "bytes" => 6,
-            "line_count" | "lines" => 7,
-            _ => return None,
-        };
-        self.get_field(index)
-    }
-
-    /// Get subject field (index 1 in default format)
-    pub fn subject(&self) -> Option<&str> {
-        self.get_field(1)
-    }
-
-    /// Get from field (index 2 in default format)
-    pub fn from(&self) -> Option<&str> {
-        self.get_field(2)
-    }
-
-    /// Get date field (index 3 in default format)
-    pub fn date(&self) -> Option<&str> {
-        self.get_field(3)
-    }
-
-    /// Get message-id field (index 4 in default format)
-    pub fn message_id(&self) -> Option<&str> {
-        self.get_field(4)
-    }
-
-    /// Get references field (index 5 in default format)
-    pub fn references(&self) -> Option<&str> {
-        self.get_field(5)
-    }
-
-    /// Get byte count field (index 6 in default format)
-    pub fn byte_count(&self) -> Option<u64> {
-        self.get_field(6)?.parse().ok()
-    }
-
-    /// Get line count field (index 7 in default format)
-    pub fn line_count(&self) -> Option<u64> {
-        self.get_field(7)?.parse().ok()
-    }
-}
-
-/// Newsgroup information
-#[derive(Debug, Clone, PartialEq)]
-pub struct NewsGroup {
-    /// Group name
-    pub name: String,
-    /// Last article number
-    pub last: u64,
-    /// First article number
-    pub first: u64,
-    /// Posting status (y/n/m)
-    pub posting_status: char,
+    /// TLS temporarily unavailable (483 response).
+    ///
+    /// The server supports STARTTLS but cannot currently perform TLS negotiation.
+    /// The client may retry later or continue with an unencrypted connection
+    /// if appropriate for the use case.
+    TlsNotAvailable {
+        /// Server-provided message explaining why TLS is unavailable
+        message: String,
+    },
 }
 
 /// Convert bytes with various text encodings to UTF-8 string
@@ -506,24 +337,11 @@ impl Response {
             335 => Ok(Response::ArticleWanted),
             340 => Ok(Response::PostAccepted),
             381 => Ok(Response::AuthRequired),
+            382 => Ok(Response::TlsReady),
             435 | 436 => Ok(Response::ArticleNotWanted),
-            // RFC 3977 specific error codes
-            400 => Ok(Response::ServiceDiscontinued { message }),
-            411 => Ok(Response::NoSuchNewsgroup { message }),
-            412 => Ok(Response::NoNewsgroupSelected { message }),
-            420 => Ok(Response::NoCurrentArticle { message }),
-            421 => Ok(Response::NoNextArticle { message }),
-            422 => Ok(Response::NoPreviousArticle { message }),
-            430 => Ok(Response::NoSuchArticle { message }),
-            480 => Ok(Response::AuthenticationRequired { message }),
-            500 => Ok(Response::CommandNotRecognized { message }),
-            501 => Ok(Response::CommandSyntaxError { message }),
-            502 => Ok(Response::AccessDenied { message }),
-            503 => Ok(Response::ProgramFault { message }),
-            // All other 4xx and 5xx error codes
-            401..=410 | 413..=419 | 423..=429 | 431..=479 | 481..=499 | 504..=599 => {
-                Ok(Response::Error { code, message })
-            }
+            483 => Ok(Response::TlsNotAvailable { message }),
+            // All 4xx and 5xx error codes use the unified Error variant
+            400..=599 => Ok(Response::Error { code, message }),
             _ => {
                 if (200..400).contains(&code) {
                     Ok(Response::Success { code, message })
@@ -571,6 +389,89 @@ impl Response {
     /// the body text.
     pub fn article_body(&self) -> Option<String> {
         self.parsed_message()?.body_text(0).map(|s| s.to_string())
+    }
+
+    // ===== Error checking helper methods =====
+
+    /// Check if this is an error response.
+    pub fn is_error(&self) -> bool {
+        matches!(self, Response::Error { .. })
+    }
+
+    /// Get the error code if this is an error response.
+    pub fn error_code(&self) -> Option<u16> {
+        match self {
+            Response::Error { code, .. } => Some(*code),
+            _ => None,
+        }
+    }
+
+    /// Get the error message if this is an error response.
+    pub fn error_message(&self) -> Option<&str> {
+        match self {
+            Response::Error { message, .. } => Some(message),
+            _ => None,
+        }
+    }
+
+    /// Check if this is a "service discontinued" error (400).
+    pub fn is_service_discontinued(&self) -> bool {
+        matches!(self, Response::Error { code: 400, .. })
+    }
+
+    /// Check if this is a "no such newsgroup" error (411).
+    pub fn is_no_such_newsgroup(&self) -> bool {
+        matches!(self, Response::Error { code: 411, .. })
+    }
+
+    /// Check if this is a "no newsgroup selected" error (412).
+    pub fn is_no_newsgroup_selected(&self) -> bool {
+        matches!(self, Response::Error { code: 412, .. })
+    }
+
+    /// Check if this is a "no current article" error (420).
+    pub fn is_no_current_article(&self) -> bool {
+        matches!(self, Response::Error { code: 420, .. })
+    }
+
+    /// Check if this is a "no next article" error (421).
+    pub fn is_no_next_article(&self) -> bool {
+        matches!(self, Response::Error { code: 421, .. })
+    }
+
+    /// Check if this is a "no previous article" error (422).
+    pub fn is_no_previous_article(&self) -> bool {
+        matches!(self, Response::Error { code: 422, .. })
+    }
+
+    /// Check if this is a "no such article" error (430).
+    pub fn is_no_such_article(&self) -> bool {
+        matches!(self, Response::Error { code: 430, .. })
+    }
+
+    /// Check if this is an "authentication required" error (480).
+    pub fn is_auth_required(&self) -> bool {
+        matches!(self, Response::Error { code: 480, .. })
+    }
+
+    /// Check if this is a "command not recognized" error (500).
+    pub fn is_command_not_recognized(&self) -> bool {
+        matches!(self, Response::Error { code: 500, .. })
+    }
+
+    /// Check if this is a "command syntax error" (501).
+    pub fn is_command_syntax_error(&self) -> bool {
+        matches!(self, Response::Error { code: 501, .. })
+    }
+
+    /// Check if this is an "access denied" error (502).
+    pub fn is_access_denied(&self) -> bool {
+        matches!(self, Response::Error { code: 502, .. })
+    }
+
+    /// Check if this is a "program fault" error (503).
+    pub fn is_program_fault(&self) -> bool {
+        matches!(self, Response::Error { code: 503, .. })
     }
 }
 
@@ -746,10 +647,11 @@ mod tests {
         let response = "500 Command not recognized";
         let parsed = Response::parse_str(response).unwrap();
 
-        if let Response::CommandNotRecognized { message } = parsed {
+        if let Response::Error { code, message } = parsed {
+            assert_eq!(code, 500);
             assert_eq!(message, "Command not recognized");
         } else {
-            panic!("Expected CommandNotRecognized response");
+            panic!("Expected Error response");
         }
     }
 
@@ -866,37 +768,6 @@ mod tests {
     }
 
     #[test]
-    fn test_parsed_article() {
-        let content = b"From: \"Demo User\" <nobody@example.com>\r\nNewsgroups: misc.test\r\nSubject: I am just a test article\r\nDate: Wed, 06 Oct 1998 04:38:40 -0500\r\n\r\nThis is just a test article body.\r\n".to_vec();
-
-        let parsed_article = ParsedArticle::new(
-            Some(3000),
-            "<45223423@example.com>".to_string(),
-            content.clone(),
-        );
-
-        // Test basic properties
-        assert_eq!(parsed_article.number, Some(3000));
-        assert_eq!(parsed_article.message_id, "<45223423@example.com>");
-        assert_eq!(parsed_article.raw_content(), &content);
-
-        // Test parsing methods
-        assert!(parsed_article.message().is_some());
-
-        let subject = parsed_article.subject();
-        assert_eq!(subject, Some("I am just a test article".to_string()));
-
-        let from = parsed_article.from();
-        assert_eq!(from, Some("nobody@example.com".to_string()));
-
-        let body = parsed_article.body_text();
-        assert_eq!(
-            body,
-            Some("This is just a test article body.\r\n".to_string())
-        );
-    }
-
-    #[test]
     fn test_encoding_detection_utf8() {
         // Test UTF-8 encoding (should work as before)
         let utf8_data = "101 Capability list:\r\nVERSION 2\r\nREADER\r\n.\r\n".as_bytes();
@@ -969,13 +840,14 @@ mod tests {
         let response = Response::parse(&invalid_utf8).unwrap();
 
         // The encoding system should handle the invalid UTF-8 bytes gracefully
-        if let Response::CommandNotRecognized { message } = response {
+        if let Response::Error { code, message } = response {
+            assert_eq!(code, 500);
             // The message should contain some representation of the invalid bytes
             // which got converted to valid UTF-8 characters (replacement chars or similar)
             assert!(message.contains("Error"));
         } else {
             panic!(
-                "Expected CommandNotRecognized response, got: {:?}",
+                "Expected Error response, got: {:?}",
                 response
             );
         }
@@ -1023,5 +895,403 @@ mod tests {
         let decoded = decode_text_with_encoding(&invalid_bytes);
         // Should not panic and should return some string
         assert!(!decoded.is_empty());
+    }
+
+    #[test]
+    fn test_parse_tls_ready_response() {
+        let response = "382 Continue with TLS negotiation";
+        let parsed = Response::parse_str(response).unwrap();
+
+        assert_eq!(parsed, Response::TlsReady);
+    }
+
+    #[test]
+    fn test_parse_tls_not_available_response() {
+        let response = "483 TLS temporarily not available";
+        let parsed = Response::parse_str(response).unwrap();
+
+        if let Response::TlsNotAvailable { message } = parsed {
+            assert_eq!(message, "TLS temporarily not available");
+        } else {
+            panic!("Expected TlsNotAvailable response");
+        }
+    }
+
+    #[test]
+    fn test_error_helper_methods() {
+        // Test is_error
+        let error = Response::Error { code: 500, message: "test".to_string() };
+        assert!(error.is_error());
+        assert!(!Response::Quit.is_error());
+        
+        // Test error_code
+        assert_eq!(error.error_code(), Some(500));
+        assert_eq!(Response::Quit.error_code(), None);
+        
+        // Test error_message
+        assert_eq!(error.error_message(), Some("test"));
+        assert_eq!(Response::Quit.error_message(), None);
+    }
+
+    #[test]
+    fn test_is_service_discontinued() {
+        let error = Response::Error { code: 400, message: "Service discontinued".to_string() };
+        assert!(error.is_service_discontinued());
+        
+        let other = Response::Error { code: 500, message: "Other".to_string() };
+        assert!(!other.is_service_discontinued());
+    }
+
+    #[test]
+    fn test_is_no_such_newsgroup() {
+        let error = Response::Error { code: 411, message: "No such newsgroup".to_string() };
+        assert!(error.is_no_such_newsgroup());
+        
+        let other = Response::Error { code: 412, message: "Other".to_string() };
+        assert!(!other.is_no_such_newsgroup());
+    }
+
+    #[test]
+    fn test_is_no_newsgroup_selected() {
+        let error = Response::Error { code: 412, message: "No newsgroup selected".to_string() };
+        assert!(error.is_no_newsgroup_selected());
+        
+        let other = Response::Error { code: 411, message: "Other".to_string() };
+        assert!(!other.is_no_newsgroup_selected());
+    }
+
+    #[test]
+    fn test_is_no_current_article() {
+        let error = Response::Error { code: 420, message: "No current article".to_string() };
+        assert!(error.is_no_current_article());
+    }
+
+    #[test]
+    fn test_is_no_next_article() {
+        let error = Response::Error { code: 421, message: "No next article".to_string() };
+        assert!(error.is_no_next_article());
+    }
+
+    #[test]
+    fn test_is_no_previous_article() {
+        let error = Response::Error { code: 422, message: "No previous article".to_string() };
+        assert!(error.is_no_previous_article());
+    }
+
+    #[test]
+    fn test_is_no_such_article() {
+        let error = Response::Error { code: 430, message: "No such article".to_string() };
+        assert!(error.is_no_such_article());
+    }
+
+    #[test]
+    fn test_is_auth_required() {
+        let error = Response::Error { code: 480, message: "Authentication required".to_string() };
+        assert!(error.is_auth_required());
+    }
+
+    #[test]
+    fn test_is_command_not_recognized() {
+        let error = Response::Error { code: 500, message: "Command not recognized".to_string() };
+        assert!(error.is_command_not_recognized());
+    }
+
+    #[test]
+    fn test_is_command_syntax_error() {
+        let error = Response::Error { code: 501, message: "Syntax error".to_string() };
+        assert!(error.is_command_syntax_error());
+    }
+
+    #[test]
+    fn test_is_access_denied() {
+        let error = Response::Error { code: 502, message: "Access denied".to_string() };
+        assert!(error.is_access_denied());
+    }
+
+    #[test]
+    fn test_is_program_fault() {
+        let error = Response::Error { code: 503, message: "Program fault".to_string() };
+        assert!(error.is_program_fault());
+    }
+
+    #[test]
+    fn test_parse_empty_response() {
+        let result = Response::parse_str("");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_parse_invalid_status_line_no_space() {
+        let result = Response::parse_str("200");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_parse_invalid_response_code() {
+        let result = Response::parse_str("ABC Invalid code");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_parse_mode_reader_posting_allowed() {
+        let response = "200 Reader mode, posting allowed";
+        let parsed = Response::parse_str(response).unwrap();
+        assert_eq!(parsed, Response::ModeReader { posting_allowed: true });
+    }
+
+    #[test]
+    fn test_parse_mode_reader_posting_prohibited() {
+        let response = "201 Reader mode, posting prohibited";
+        let parsed = Response::parse_str(response).unwrap();
+        assert_eq!(parsed, Response::ModeReader { posting_allowed: false });
+    }
+
+    #[test]
+    fn test_parse_quit_response() {
+        let response = "205 Goodbye";
+        let parsed = Response::parse_str(response).unwrap();
+        assert_eq!(parsed, Response::Quit);
+    }
+
+    #[test]
+    fn test_parse_article_listing() {
+        let response = "211 list follows\r\n3000\r\n3001\r\n3002\r\n.\r\n";
+        let parsed = Response::parse_str(response).unwrap();
+
+        if let Response::ArticleListing(articles) = parsed {
+            assert_eq!(articles, vec![3000, 3001, 3002]);
+        } else {
+            panic!("Expected ArticleListing response");
+        }
+    }
+
+    #[test]
+    fn test_parse_article_with_number_zero() {
+        let response = "220 0 <test@example.com>\r\nSubject: Test\r\n\r\nBody\r\n.\r\n";
+        let parsed = Response::parse_str(response).unwrap();
+
+        if let Response::Article { number, message_id, .. } = parsed {
+            assert_eq!(number, None); // 0 means no article number
+            assert_eq!(message_id, "<test@example.com>");
+        } else {
+            panic!("Expected Article response");
+        }
+    }
+
+    #[test]
+    fn test_parse_article_head_response() {
+        let response = "221 123 <test@example.com>\r\nSubject: Test\r\nFrom: user@example.com\r\n.\r\n";
+        let parsed = Response::parse_str(response).unwrap();
+
+        if let Response::Article { number, message_id, content } = parsed {
+            assert_eq!(number, Some(123));
+            assert_eq!(message_id, "<test@example.com>");
+            assert!(content.len() > 0);
+        } else {
+            panic!("Expected Article response");
+        }
+    }
+
+    #[test]
+    fn test_parse_article_body_response() {
+        let response = "222 123 <test@example.com>\r\nThis is the body.\r\n.\r\n";
+        let parsed = Response::parse_str(response).unwrap();
+
+        if let Response::Article { number, message_id, content } = parsed {
+            assert_eq!(number, Some(123));
+            assert_eq!(message_id, "<test@example.com>");
+            assert!(!content.is_empty());
+        } else {
+            panic!("Expected Article response");
+        }
+    }
+
+    #[test]
+    fn test_parse_article_status_response() {
+        let response = "223 3000 <45223423@example.com>";
+        let parsed = Response::parse_str(response).unwrap();
+
+        if let Response::ArticleStatus { number, message_id } = parsed {
+            assert_eq!(number, 3000);
+            assert_eq!(message_id, "<45223423@example.com>");
+        } else {
+            panic!("Expected ArticleStatus response");
+        }
+    }
+
+    #[test]
+    fn test_parse_new_articles_response() {
+        let response = "230 New articles follow\r\n<msg1@example.com>\r\n<msg2@example.com>\r\n.\r\n";
+        let parsed = Response::parse_str(response).unwrap();
+
+        if let Response::NewArticles(articles) = parsed {
+            assert_eq!(articles.len(), 2);
+            assert_eq!(articles[0], "<msg1@example.com>");
+            assert_eq!(articles[1], "<msg2@example.com>");
+        } else {
+            panic!("Expected NewArticles response");
+        }
+    }
+
+    #[test]
+    fn test_parse_new_newsgroups_response() {
+        let response = "231 New newsgroups follow\r\nalt.test 100 1 y\r\ncomp.test 50 1 n\r\n.\r\n";
+        let parsed = Response::parse_str(response).unwrap();
+
+        if let Response::NewNewsgroups(groups) = parsed {
+            assert_eq!(groups.len(), 2);
+            assert_eq!(groups[0].name, "alt.test");
+            assert_eq!(groups[1].name, "comp.test");
+        } else {
+            panic!("Expected NewNewsgroups response");
+        }
+    }
+
+    #[test]
+    fn test_parse_article_transferred_response() {
+        let response = "235 Article transferred OK";
+        let parsed = Response::parse_str(response).unwrap();
+        assert_eq!(parsed, Response::ArticleTransferred);
+    }
+
+    #[test]
+    fn test_parse_post_success_response() {
+        let response = "240 Article posted OK";
+        let parsed = Response::parse_str(response).unwrap();
+        assert_eq!(parsed, Response::PostSuccess);
+    }
+
+    #[test]
+    fn test_parse_auth_success_response() {
+        let response = "281 Authentication accepted";
+        let parsed = Response::parse_str(response).unwrap();
+        assert_eq!(parsed, Response::AuthSuccess);
+    }
+
+    #[test]
+    fn test_parse_article_wanted_response() {
+        let response = "335 Send article";
+        let parsed = Response::parse_str(response).unwrap();
+        assert_eq!(parsed, Response::ArticleWanted);
+    }
+
+    #[test]
+    fn test_parse_post_accepted_response() {
+        let response = "340 Send article";
+        let parsed = Response::parse_str(response).unwrap();
+        assert_eq!(parsed, Response::PostAccepted);
+    }
+
+    #[test]
+    fn test_parse_auth_required_response() {
+        let response = "381 Password required";
+        let parsed = Response::parse_str(response).unwrap();
+        assert_eq!(parsed, Response::AuthRequired);
+    }
+
+    #[test]
+    fn test_parse_article_not_wanted_435() {
+        let response = "435 Article not wanted";
+        let parsed = Response::parse_str(response).unwrap();
+        assert_eq!(parsed, Response::ArticleNotWanted);
+    }
+
+    #[test]
+    fn test_parse_article_not_wanted_436() {
+        let response = "436 Transfer denied";
+        let parsed = Response::parse_str(response).unwrap();
+        assert_eq!(parsed, Response::ArticleNotWanted);
+    }
+
+    #[test]
+    fn test_parse_success_generic() {
+        let response = "282 Some custom success";
+        let parsed = Response::parse_str(response).unwrap();
+
+        if let Response::Success { code, message } = parsed {
+            assert_eq!(code, 282);
+            assert_eq!(message, "Some custom success");
+        } else {
+            panic!("Expected Success response");
+        }
+    }
+
+    #[test]
+    fn test_parse_error_4xx() {
+        let response = "440 Posting not permitted";
+        let parsed = Response::parse_str(response).unwrap();
+
+        if let Response::Error { code, message } = parsed {
+            assert_eq!(code, 440);
+            assert_eq!(message, "Posting not permitted");
+        } else {
+            panic!("Expected Error response");
+        }
+    }
+
+    #[test]
+    fn test_parse_error_5xx() {
+        let response = "502 Access denied";
+        let parsed = Response::parse_str(response).unwrap();
+
+        if let Response::Error { code, message } = parsed {
+            assert_eq!(code, 502);
+            assert_eq!(message, "Access denied");
+        } else {
+            panic!("Expected Error response");
+        }
+    }
+
+    #[test]
+    fn test_parse_invalid_group_response() {
+        let response = "211 incomplete";
+        let result = Response::parse_str(response);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_parse_invalid_article_response() {
+        let response = "220 incomplete";
+        let result = Response::parse_str(response);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_parse_invalid_article_status_response() {
+        let response = "223 incomplete";
+        let result = Response::parse_str(response);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_parse_newsgroup_line_incomplete() {
+        // Internal function test
+        let result = parse_newsgroup_line("incomplete");
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_parse_header_entry_incomplete() {
+        // Internal function test
+        let result = parse_header_entry("incomplete");
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_parse_overview_entry_empty() {
+        // Internal function test - empty string still creates an entry with empty fields
+        let result = parse_overview_entry("");
+        // An empty line creates an OverviewEntry with one empty field
+        assert!(result.is_some());
+        let entry = result.unwrap();
+        assert!(entry.fields.is_empty() || entry.fields[0].is_empty());
+    }
+
+    #[test]
+    fn test_response_error_code_range() {
+        // Test error code at the edge of range
+        let response = "599 Maximum error code";
+        let parsed = Response::parse_str(response).unwrap();
+        assert!(matches!(parsed, Response::Error { code: 599, .. }));
     }
 }
