@@ -155,7 +155,8 @@ fn test_rfc3977_command_length_validation() {
 fn test_rfc3977_specific_error_codes() {
     let interactions = vec![(
         Command::Group("nonexistent.group".to_string()),
-        Response::NoSuchNewsgroup {
+        Response::Error {
+            code: 411,
             message: "No such newsgroup".to_string(),
         },
     )];
@@ -166,10 +167,11 @@ fn test_rfc3977_specific_error_codes() {
     let response = test
         .send_command(Command::Group("nonexistent.group".to_string()))
         .unwrap();
-    if let Response::NoSuchNewsgroup { message } = response {
+    if let Response::Error { code, message } = response {
+        assert_eq!(code, 411);
         assert!(message.contains("No such newsgroup"));
     } else {
-        panic!("Expected NoSuchNewsgroup response");
+        panic!("Expected Error response with code 411");
     }
 
     assert!(test.is_complete());
@@ -276,7 +278,8 @@ fn test_rfc3977_list_command_encoding() {
 fn test_rfc3977_authentication_errors() {
     let interactions = vec![(
         Command::Post,
-        Response::AuthenticationRequired {
+        Response::Error {
+            code: 480,
             message: "Authentication required for posting".to_string(),
         },
     )];
@@ -284,10 +287,11 @@ fn test_rfc3977_authentication_errors() {
     let mut test = ClientMockTest::new(interactions);
     let response = test.send_command(Command::Post).unwrap();
 
-    if let Response::AuthenticationRequired { message } = response {
+    if let Response::Error { code, message } = response {
+        assert_eq!(code, 480);
         assert!(message.contains("Authentication required"));
     } else {
-        panic!("Expected AuthenticationRequired response");
+        panic!("Expected Error response with code 480");
     }
 
     assert!(test.is_complete());
@@ -298,7 +302,8 @@ fn test_rfc3977_authentication_errors() {
 fn test_rfc3977_syntax_errors() {
     let interactions = vec![(
         Command::Capabilities, // Using valid command for test setup
-        Response::CommandSyntaxError {
+        Response::Error {
+            code: 501,
             message: "Command syntax error".to_string(),
         },
     )];
@@ -306,10 +311,11 @@ fn test_rfc3977_syntax_errors() {
     let mut test = ClientMockTest::new(interactions);
     let response = test.send_command(Command::Capabilities).unwrap();
 
-    if let Response::CommandSyntaxError { message } = response {
+    if let Response::Error { code, message } = response {
+        assert_eq!(code, 501);
         assert!(message.contains("syntax error"));
     } else {
-        panic!("Expected CommandSyntaxError response");
+        panic!("Expected Error response with code 501");
     }
 
     assert!(test.is_complete());

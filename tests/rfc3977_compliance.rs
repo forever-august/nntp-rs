@@ -114,7 +114,7 @@ fn test_rfc3977_article_by_number() {
         ),
         // Then retrieve an article
         (
-            Command::Article(ArticleSpec::Number(3000)),
+            Command::Article(ArticleSpec::number_in_group("misc.test", 3000)),
             Response::Article {
                 number: Some(3000),
                 message_id: "<45223423@example.com>".to_string(),
@@ -131,7 +131,10 @@ fn test_rfc3977_article_by_number() {
 
     // Retrieve article
     let response = test
-        .send_command(Command::Article(ArticleSpec::Number(3000)))
+        .send_command(Command::Article(ArticleSpec::number_in_group(
+            "misc.test",
+            3000,
+        )))
         .unwrap();
 
     if let Response::Article {
@@ -204,7 +207,7 @@ fn test_rfc3977_head_command() {
             },
         ),
         (
-            Command::Head(ArticleSpec::Number(3000)),
+            Command::Head(ArticleSpec::number_in_group("misc.test", 3000)),
             Response::Article {
                 number: Some(3000),
                 message_id: "<45223423@example.com>".to_string(),
@@ -221,7 +224,10 @@ fn test_rfc3977_head_command() {
 
     // Get headers
     let response = test
-        .send_command(Command::Head(ArticleSpec::Number(3000)))
+        .send_command(Command::Head(ArticleSpec::number_in_group(
+            "misc.test",
+            3000,
+        )))
         .unwrap();
 
     if let Response::Article { content, .. } = response {
@@ -251,7 +257,7 @@ fn test_rfc3977_body_command() {
             },
         ),
         (
-            Command::Body(ArticleSpec::Number(3000)),
+            Command::Body(ArticleSpec::number_in_group("misc.test", 3000)),
             Response::Article {
                 number: Some(3000),
                 message_id: "<45223423@example.com>".to_string(),
@@ -268,7 +274,10 @@ fn test_rfc3977_body_command() {
 
     // Get body
     let response = test
-        .send_command(Command::Body(ArticleSpec::Number(3000)))
+        .send_command(Command::Body(ArticleSpec::number_in_group(
+            "misc.test",
+            3000,
+        )))
         .unwrap();
 
     if let Response::Article { content, .. } = response {
@@ -298,7 +307,7 @@ fn test_rfc3977_stat_command() {
             },
         ),
         (
-            Command::Stat(ArticleSpec::Number(3000)),
+            Command::Stat(ArticleSpec::number_in_group("misc.test", 3000)),
             Response::ArticleStatus {
                 number: 3000,
                 message_id: "<45223423@example.com>".to_string(),
@@ -314,7 +323,10 @@ fn test_rfc3977_stat_command() {
 
     // Get status
     let response = test
-        .send_command(Command::Stat(ArticleSpec::Number(3000)))
+        .send_command(Command::Stat(ArticleSpec::number_in_group(
+            "misc.test",
+            3000,
+        )))
         .unwrap();
 
     if let Response::ArticleStatus { number, message_id } = response {
@@ -410,12 +422,13 @@ fn test_rfc3977_error_responses() {
     let interactions = vec![
         (
             Command::Group("nonexistent.group".to_string()),
-            Response::NoSuchNewsgroup {
+            Response::Error {
+                code: 411,
                 message: "No such newsgroup".to_string(),
             },
         ),
         (
-            Command::Article(ArticleSpec::Number(999999)),
+            Command::Article(ArticleSpec::number_in_group("misc.test", 999999)),
             Response::Error {
                 code: 423,
                 message: "No article with that number".to_string(),
@@ -430,15 +443,19 @@ fn test_rfc3977_error_responses() {
         .send_command(Command::Group("nonexistent.group".to_string()))
         .unwrap();
 
-    if let Response::NoSuchNewsgroup { message } = response {
+    if let Response::Error { code, message } = response {
+        assert_eq!(code, 411);
         assert!(message.contains("No such newsgroup"));
     } else {
-        panic!("Expected NoSuchNewsgroup response");
+        panic!("Expected Error response with code 411");
     }
 
     // Test nonexistent article
     let response = test
-        .send_command(Command::Article(ArticleSpec::Number(999999)))
+        .send_command(Command::Article(ArticleSpec::number_in_group(
+            "misc.test",
+            999999,
+        )))
         .unwrap();
 
     if let Response::Error { code, message } = response {
@@ -956,7 +973,7 @@ fn test_rfc3977_complete_session() {
         ),
         // Get article status
         (
-            Command::Stat(ArticleSpec::Number(3000)),
+            Command::Stat(ArticleSpec::number_in_group("misc.test", 3000)),
             Response::ArticleStatus {
                 number: 3000,
                 message_id: "<45223423@example.com>".to_string(),
@@ -964,7 +981,7 @@ fn test_rfc3977_complete_session() {
         ),
         // Retrieve article headers
         (
-            Command::Head(ArticleSpec::Number(3000)),
+            Command::Head(ArticleSpec::number_in_group("misc.test", 3000)),
             Response::Article {
                 number: Some(3000),
                 message_id: "<45223423@example.com>".to_string(),
@@ -991,11 +1008,17 @@ fn test_rfc3977_complete_session() {
         .unwrap();
     assert_eq!(test.client().state(), "group_selected");
 
-    test.send_command(Command::Stat(ArticleSpec::Number(3000)))
-        .unwrap();
+    test.send_command(Command::Stat(ArticleSpec::number_in_group(
+        "misc.test",
+        3000,
+    )))
+    .unwrap();
 
-    test.send_command(Command::Head(ArticleSpec::Number(3000)))
-        .unwrap();
+    test.send_command(Command::Head(ArticleSpec::number_in_group(
+        "misc.test",
+        3000,
+    )))
+    .unwrap();
 
     test.send_command(Command::Quit).unwrap();
     assert_eq!(test.client().state(), "closed");
@@ -1017,7 +1040,7 @@ fn test_rfc3977_article_mail_parser_integration() {
             },
         ),
         (
-            Command::Article(ArticleSpec::Number(3000)),
+            Command::Article(ArticleSpec::number_in_group("misc.test", 3000)),
             Response::Article {
                 number: Some(3000),
                 message_id: "<45223423@example.com>".to_string(),
@@ -1034,7 +1057,10 @@ fn test_rfc3977_article_mail_parser_integration() {
 
     // Retrieve article
     let response = test
-        .send_command(Command::Article(ArticleSpec::Number(3000)))
+        .send_command(Command::Article(ArticleSpec::number_in_group(
+            "misc.test",
+            3000,
+        )))
         .unwrap();
 
     if let Response::Article {
