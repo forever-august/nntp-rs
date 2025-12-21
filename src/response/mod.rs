@@ -562,23 +562,54 @@ fn parse_article_status(message: &str) -> Result<Response> {
     Ok(Response::ArticleStatus { number, message_id })
 }
 
+/// Parse a newsgroup line from either LIST ACTIVE or LIST NEWSGROUPS format.
+///
+/// This function handles two different 215 response formats:
+///
+/// 1. **LIST ACTIVE** format (RFC 3977 Section 7.6.3):
+///    ```text
+///    groupname last first posting_status
+///    ```
+///    Example: `comp.lang.c 12345 1 y`
+///
+/// 2. **LIST NEWSGROUPS** format (RFC 3977 Section 7.6.6):
+///    ```text
+///    groupname description...
+///    ```
+///    Example: `comp.lang.c Discussion about C programming`
+///
+/// The parser attempts LIST ACTIVE format first (by validating numeric fields).
+/// If that fails, it falls back to LIST NEWSGROUPS format, using default values
+/// for the numeric fields (0 for first/last, 'y' for posting_status).
 fn parse_newsgroup_line(line: &str) -> Option<NewsGroup> {
     let parts: Vec<&str> = line.split_whitespace().collect();
-    if parts.len() < 4 {
-        return None;
+    
+    // Try parsing as LIST ACTIVE format first (4+ fields: name, last, first, posting_status)
+    if parts.len() >= 4 {
+        if let (Ok(last), Ok(first)) = (parts[1].parse::<u64>(), parts[2].parse::<u64>()) {
+            if let Some(posting_status) = parts[3].chars().next() {
+                return Some(NewsGroup {
+                    name: parts[0].to_string(),
+                    last,
+                    first,
+                    posting_status,
+                });
+            }
+        }
     }
-
-    let name = parts[0].to_string();
-    let last = parts[1].parse::<u64>().ok()?;
-    let first = parts[2].parse::<u64>().ok()?;
-    let posting_status = parts[3].chars().next()?;
-
-    Some(NewsGroup {
-        name,
-        last,
-        first,
-        posting_status,
-    })
+    
+    // Fall back to LIST NEWSGROUPS format (1+ fields: name [description...])
+    // For NEWSGROUPS, we only have the group name, so use default values for the rest
+    if !parts.is_empty() {
+        return Some(NewsGroup {
+            name: parts[0].to_string(),
+            last: 0,
+            first: 0,
+            posting_status: 'y', // Default to posting allowed
+        });
+    }
+    
+    None
 }
 
 fn parse_header_entry(line: &str) -> Option<HeaderEntry> {
@@ -1264,10 +1295,77 @@ mod tests {
     }
 
     #[test]
+    fn test_parse_newsgroup_line_active_format() {
+        // Test LIST ACTIVE format: name last first posting_status
+        let result = parse_newsgroup_line("comp.lang.c 12345 1 y");
+        assert!(result.is_some());
+        let newsgroup = result.unwrap();
+        assert_eq!(newsgroup.name, "comp.lang.c");
+        assert_eq!(newsgroup.last, 12345);
+        assert_eq!(newsgroup.first, 1);
+        assert_eq!(newsgroup.posting_status, 'y');
+    }
+
+    #[test]
+    fn test_parse_newsgroup_line_newsgroups_format() {
+        // Test LIST NEWSGROUPS format: name description...
+        let result = parse_newsgroup_line("comp.lang.c Discussion about C programming");
+        assert!(result.is_some());
+        let newsgroup = result.unwrap();
+        assert_eq!(newsgroup.name, "comp.lang.c");
+        // Default values for NEWSGROUPS format
+        assert_eq!(newsgroup.last, 0);
+        assert_eq!(newsgroup.first, 0);
+        assert_eq!(newsgroup.posting_status, 'y');
+    }
+
+    #[test]
     fn test_parse_newsgroup_line_incomplete() {
-        // Internal function test
-        let result = parse_newsgroup_line("incomplete");
+        // Empty line should return None
+        let result = parse_newsgroup_line("");
         assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_parse_newsgroup_list_active_response() {
+        // Test full LIST ACTIVE response
+        let response = "215 List of newsgroups follows\r\ncomp.lang.rust 1000 1 y\r\nalt.test 50 1 n\r\n.\r\n";
+        let parsed = Response::parse_str(response).unwrap();
+
+        if let Response::NewsgroupList(groups) = parsed {
+            assert_eq!(groups.len(), 2);
+            assert_eq!(groups[0].name, "comp.lang.rust");
+            assert_eq!(groups[0].last, 1000);
+            assert_eq!(groups[0].first, 1);
+            assert_eq!(groups[0].posting_status, 'y');
+            assert_eq!(groups[1].name, "alt.test");
+            assert_eq!(groups[1].last, 50);
+            assert_eq!(groups[1].first, 1);
+            assert_eq!(groups[1].posting_status, 'n');
+        } else {
+            panic!("Expected NewsgroupList response");
+        }
+    }
+
+    #[test]
+    fn test_parse_newsgroup_list_newsgroups_response() {
+        // Test full LIST NEWSGROUPS response
+        let response = "215 Descriptions in form \"group description\"\r\ncomp.lang.c Discussion about C programming\r\nalt.binaries.pictures Pictures in binary format\r\n.\r\n";
+        let parsed = Response::parse_str(response).unwrap();
+
+        if let Response::NewsgroupList(groups) = parsed {
+            assert_eq!(groups.len(), 2);
+            assert_eq!(groups[0].name, "comp.lang.c");
+            assert_eq!(groups[0].last, 0);
+            assert_eq!(groups[0].first, 0);
+            assert_eq!(groups[0].posting_status, 'y');
+            assert_eq!(groups[1].name, "alt.binaries.pictures");
+            assert_eq!(groups[1].last, 0);
+            assert_eq!(groups[1].first, 0);
+            assert_eq!(groups[1].posting_status, 'y');
+        } else {
+            panic!("Expected NewsgroupList response");
+        }
     }
 
     #[test]
