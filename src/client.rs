@@ -116,31 +116,39 @@ impl Client {
     }
 
     fn extract_complete_response(&mut self) -> Result<Option<Vec<u8>>> {
-        // Look for complete response in buffer
-        let buffer_str = std::str::from_utf8(&self.read_buffer)
-            .map_err(|e| Error::Parse(format!("Invalid UTF-8 in response: {e}")))?;
+        // Look for complete response in buffer using byte operations
+        // to handle non-UTF-8 content in article headers/bodies
 
-        // Check for single-line response (ends with \r\n)
-        if let Some(end_pos) = buffer_str.find("\r\n") {
-            // Check if this is a multi-line response (starts with 1xx code)
-            let status_line = &buffer_str[..end_pos];
-            if let Ok(code) = status_line[..3].parse::<u16>() {
-                if is_multiline_response(code) {
-                    // Look for terminator "\r\n.\r\n"
-                    if let Some(term_pos) = buffer_str.find("\r\n.\r\n") {
-                        let response_len = term_pos + 5; // include terminator
-                        let response = self.read_buffer.split_to(response_len).to_vec();
-                        return Ok(Some(response));
-                    } else {
-                        // Need more data
-                        return Ok(None);
-                    }
-                } else {
-                    // Single-line response
-                    let response_len = end_pos + 2; // include \r\n
+        // Find the first CRLF (end of status line)
+        let crlf_pos = find_crlf(&self.read_buffer);
+        if crlf_pos.is_none() {
+            return Ok(None);
+        }
+        let end_pos = crlf_pos.unwrap();
+
+        // Parse the 3-digit status code from the start of the buffer
+        if end_pos < 3 {
+            return Ok(None);
+        }
+
+        // Extract the status code (first 3 bytes should be ASCII digits)
+        let code = parse_status_code(&self.read_buffer[..3]);
+        if let Some(code) = code {
+            if is_multiline_response(code) {
+                // Look for terminator "\r\n.\r\n"
+                if let Some(term_pos) = find_terminator(&self.read_buffer) {
+                    let response_len = term_pos + 5; // include terminator
                     let response = self.read_buffer.split_to(response_len).to_vec();
                     return Ok(Some(response));
+                } else {
+                    // Need more data
+                    return Ok(None);
                 }
+            } else {
+                // Single-line response
+                let response_len = end_pos + 2; // include \r\n
+                let response = self.read_buffer.split_to(response_len).to_vec();
+                return Ok(Some(response));
             }
         }
 
@@ -266,6 +274,49 @@ impl Client {
 
 fn is_multiline_response(code: u16) -> bool {
     matches!(code, 100..=110 | 112..=199 | 215 | 220..=222 | 224..=225 | 230 | 231)
+}
+
+/// Find the position of the first CRLF sequence in the buffer.
+fn find_crlf(data: &[u8]) -> Option<usize> {
+    for i in 0..data.len().saturating_sub(1) {
+        if data[i] == b'\r' && data[i + 1] == b'\n' {
+            return Some(i);
+        }
+    }
+    None
+}
+
+/// Find the position of the multiline terminator "\r\n.\r\n" in the buffer.
+fn find_terminator(data: &[u8]) -> Option<usize> {
+    if data.len() < 5 {
+        return None;
+    }
+    for i in 0..=data.len() - 5 {
+        if data[i] == b'\r'
+            && data[i + 1] == b'\n'
+            && data[i + 2] == b'.'
+            && data[i + 3] == b'\r'
+            && data[i + 4] == b'\n'
+        {
+            return Some(i);
+        }
+    }
+    None
+}
+
+/// Parse a 3-digit ASCII status code from bytes.
+fn parse_status_code(data: &[u8]) -> Option<u16> {
+    if data.len() < 3 {
+        return None;
+    }
+    // Each byte must be an ASCII digit
+    if !data[0].is_ascii_digit() || !data[1].is_ascii_digit() || !data[2].is_ascii_digit() {
+        return None;
+    }
+    let code = (data[0] - b'0') as u16 * 100
+        + (data[1] - b'0') as u16 * 10
+        + (data[2] - b'0') as u16;
+    Some(code)
 }
 
 #[cfg(test)]
@@ -610,5 +661,103 @@ mod tests {
         assert!(matches!(response, Response::Help(_)));
         // After help response, returns to reader (not authenticated since we never authed)
         assert_eq!(client.state(), "reader");
+    }
+
+    #[test]
+    fn test_find_crlf() {
+        assert_eq!(find_crlf(b"hello\r\nworld"), Some(5));
+        assert_eq!(find_crlf(b"no newline"), None);
+        assert_eq!(find_crlf(b"\r\n"), Some(0));
+        assert_eq!(find_crlf(b"a\r\nb"), Some(1));
+        assert_eq!(find_crlf(b"\r"), None); // incomplete CRLF
+    }
+
+    #[test]
+    fn test_find_terminator() {
+        assert_eq!(find_terminator(b"data\r\n.\r\n"), Some(4));
+        assert_eq!(find_terminator(b"\r\n.\r\n"), Some(0));
+        assert_eq!(find_terminator(b"no terminator"), None);
+        assert_eq!(find_terminator(b"\r\n.\r"), None); // incomplete
+        assert_eq!(find_terminator(b"\r\n."), None); // too short
+    }
+
+    #[test]
+    fn test_parse_status_code() {
+        assert_eq!(parse_status_code(b"200"), Some(200));
+        assert_eq!(parse_status_code(b"101"), Some(101));
+        assert_eq!(parse_status_code(b"599"), Some(599));
+        assert_eq!(parse_status_code(b"ABC"), None);
+        assert_eq!(parse_status_code(b"20"), None); // too short
+        assert_eq!(parse_status_code(b"2x0"), None); // non-digit
+    }
+
+    #[test]
+    fn test_non_utf8_in_multiline_response() {
+        let mut client = Client::new();
+
+        // Create a multiline response with non-UTF-8 bytes (e.g., ISO-8859-1 encoded name)
+        let mut response_data = Vec::new();
+        response_data.extend_from_slice(b"225 Header follows\r\n");
+        response_data.extend_from_slice(b"3000 Test ");
+        response_data.push(0xE9); // é in ISO-8859-1
+        response_data.extend_from_slice(b" Author\r\n");
+        response_data.extend_from_slice(b".\r\n");
+
+        client.feed_bytes(&response_data);
+
+        // Should not error due to non-UTF-8 content
+        let result = client.decode_response();
+        assert!(result.is_ok());
+        let response = result.unwrap();
+        assert!(response.is_some());
+    }
+
+    #[test]
+    fn test_non_utf8_in_hdr_from_response() {
+        let mut client = Client::new();
+
+        // Simulate a large HDR From response with non-UTF-8 bytes
+        // This mimics the real-world error: "incomplete utf-8 byte sequence from index 212928"
+        let mut response_data = Vec::new();
+        response_data.extend_from_slice(b"225 Header follows\r\n");
+
+        // Add many header entries, some with non-UTF-8 characters
+        for i in 0..100 {
+            response_data.extend_from_slice(format!("{} ", 3000 + i).as_bytes());
+            // Add some non-UTF-8 bytes (common in email From headers with legacy encodings)
+            if i % 10 == 0 {
+                response_data.push(0xE9); // é in ISO-8859-1
+                response_data.push(0xF1); // ñ in ISO-8859-1
+            }
+            response_data.extend_from_slice(b"Test Author\r\n");
+        }
+        response_data.extend_from_slice(b".\r\n");
+
+        client.feed_bytes(&response_data);
+
+        // Should not error due to non-UTF-8 content
+        let result = client.decode_response();
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_chunked_non_utf8_data() {
+        let mut client = Client::new();
+
+        // Feed data in chunks, with a split happening in the middle of non-UTF-8 bytes
+        // This tests that the byte-based approach handles chunking correctly
+        let part1 = b"225 Header follows\r\n3000 Test ";
+        let mut part2 = Vec::new();
+        part2.push(0xE9); // é in ISO-8859-1
+        part2.extend_from_slice(b" Author\r\n.\r\n");
+
+        client.feed_bytes(part1);
+        // No complete response yet
+        assert!(client.decode_response().unwrap().is_none());
+
+        client.feed_bytes(&part2);
+        // Now should have complete response
+        let response = client.decode_response().unwrap();
+        assert!(response.is_some());
     }
 }
