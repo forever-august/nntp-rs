@@ -140,7 +140,10 @@ mod tests {
         assert_eq!(entry.line_count(), Some(42));
 
         // Test get_default_field
-        assert_eq!(entry.get_default_field("subject"), Some("I am just a test article"));
+        assert_eq!(
+            entry.get_default_field("subject"),
+            Some("I am just a test article")
+        );
         assert_eq!(entry.get_default_field("from"), Some("demo@example.com"));
         assert_eq!(entry.get_default_field("bytes"), Some("1234"));
         assert_eq!(entry.get_default_field("lines"), Some("42"));

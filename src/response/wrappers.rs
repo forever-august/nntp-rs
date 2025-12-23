@@ -79,9 +79,7 @@ impl TryFrom<Response> for HelpText {
     fn try_from(response: Response) -> Result<Self, Self::Error> {
         match response {
             Response::Help(lines) => Ok(HelpText(lines)),
-            _ => Err(Error::InvalidResponse(
-                "Expected help response".to_string(),
-            )),
+            _ => Err(Error::InvalidResponse("Expected help response".to_string())),
         }
     }
 }
@@ -307,9 +305,7 @@ impl TryFrom<Response> for ServerDate {
     fn try_from(response: Response) -> Result<Self, Self::Error> {
         match response {
             Response::Date(date) => Ok(ServerDate(date)),
-            _ => Err(Error::InvalidResponse(
-                "Expected date response".to_string(),
-            )),
+            _ => Err(Error::InvalidResponse("Expected date response".to_string())),
         }
     }
 }
@@ -806,10 +802,7 @@ mod tests {
 
     #[test]
     fn test_overview_format_try_from_success() {
-        let response = Response::OverviewFormat(vec![
-            "Subject:".to_string(),
-            "From:".to_string(),
-        ]);
+        let response = Response::OverviewFormat(vec!["Subject:".to_string(), "From:".to_string()]);
         let format: OverviewFormat = response.try_into().unwrap();
         assert_eq!(format.len(), 2);
     }

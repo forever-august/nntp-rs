@@ -475,11 +475,15 @@ mod tests {
 
     #[test]
     fn test_response_encoding_mode_reader() {
-        let posting_allowed = Response::ModeReader { posting_allowed: true };
+        let posting_allowed = Response::ModeReader {
+            posting_allowed: true,
+        };
         let encoded = encode_response(&posting_allowed).unwrap();
         assert_eq!(encoded, b"200 Reader mode, posting allowed\r\n");
 
-        let posting_prohibited = Response::ModeReader { posting_allowed: false };
+        let posting_prohibited = Response::ModeReader {
+            posting_allowed: false,
+        };
         let encoded = encode_response(&posting_prohibited).unwrap();
         assert_eq!(encoded, b"201 Reader mode, posting prohibited\r\n");
     }
@@ -531,9 +535,12 @@ mod tests {
     #[test]
     fn test_response_encoding_newsgroup_list() {
         use crate::response::NewsGroup;
-        let groups = Response::NewsgroupList(vec![
-            NewsGroup { name: "misc.test".to_string(), last: 100, first: 1, posting_status: 'y' },
-        ]);
+        let groups = Response::NewsgroupList(vec![NewsGroup {
+            name: "misc.test".to_string(),
+            last: 100,
+            first: 1,
+            posting_status: 'y',
+        }]);
         let encoded = encode_response(&groups).unwrap();
         assert!(encoded.starts_with(b"215 Newsgroups follow:"));
         assert!(String::from_utf8_lossy(&encoded).contains("misc.test 100 1 y"));
@@ -542,16 +549,20 @@ mod tests {
     #[test]
     fn test_response_encoding_new_newsgroups() {
         use crate::response::NewsGroup;
-        let groups = Response::NewNewsgroups(vec![
-            NewsGroup { name: "new.group".to_string(), last: 50, first: 1, posting_status: 'n' },
-        ]);
+        let groups = Response::NewNewsgroups(vec![NewsGroup {
+            name: "new.group".to_string(),
+            last: 50,
+            first: 1,
+            posting_status: 'n',
+        }]);
         let encoded = encode_response(&groups).unwrap();
         assert!(encoded.starts_with(b"231 New newsgroups follow:"));
     }
 
     #[test]
     fn test_response_encoding_new_articles() {
-        let articles = Response::NewArticles(vec!["<art1@x.com>".to_string(), "<art2@x.com>".to_string()]);
+        let articles =
+            Response::NewArticles(vec!["<art1@x.com>".to_string(), "<art2@x.com>".to_string()]);
         let encoded = encode_response(&articles).unwrap();
         assert!(encoded.starts_with(b"230 New articles follow:"));
         assert!(String::from_utf8_lossy(&encoded).contains("<art1@x.com>"));
@@ -566,20 +577,38 @@ mod tests {
 
     #[test]
     fn test_response_encoding_post_responses() {
-        assert_eq!(encode_response(&Response::PostAccepted).unwrap(), b"340 Send article to be posted\r\n");
-        assert_eq!(encode_response(&Response::PostSuccess).unwrap(), b"240 Article posted successfully\r\n");
+        assert_eq!(
+            encode_response(&Response::PostAccepted).unwrap(),
+            b"340 Send article to be posted\r\n"
+        );
+        assert_eq!(
+            encode_response(&Response::PostSuccess).unwrap(),
+            b"240 Article posted successfully\r\n"
+        );
     }
 
     #[test]
     fn test_response_encoding_ihave_responses() {
-        assert_eq!(encode_response(&Response::ArticleWanted).unwrap(), b"335 Send article to be transferred\r\n");
-        assert_eq!(encode_response(&Response::ArticleNotWanted).unwrap(), b"435 Article not wanted\r\n");
-        assert_eq!(encode_response(&Response::ArticleTransferred).unwrap(), b"235 Article transferred successfully\r\n");
+        assert_eq!(
+            encode_response(&Response::ArticleWanted).unwrap(),
+            b"335 Send article to be transferred\r\n"
+        );
+        assert_eq!(
+            encode_response(&Response::ArticleNotWanted).unwrap(),
+            b"435 Article not wanted\r\n"
+        );
+        assert_eq!(
+            encode_response(&Response::ArticleTransferred).unwrap(),
+            b"235 Article transferred successfully\r\n"
+        );
     }
 
     #[test]
     fn test_response_encoding_quit() {
-        assert_eq!(encode_response(&Response::Quit).unwrap(), b"205 Goodbye\r\n");
+        assert_eq!(
+            encode_response(&Response::Quit).unwrap(),
+            b"205 Goodbye\r\n"
+        );
     }
 
     #[test]
@@ -600,9 +629,10 @@ mod tests {
     #[test]
     fn test_response_encoding_header_data() {
         use crate::response::HeaderEntry;
-        let headers = Response::HeaderData(vec![
-            HeaderEntry { article: "100".to_string(), value: "Test Subject".to_string() },
-        ]);
+        let headers = Response::HeaderData(vec![HeaderEntry {
+            article: "100".to_string(),
+            value: "Test Subject".to_string(),
+        }]);
         let encoded = encode_response(&headers).unwrap();
         assert!(encoded.starts_with(b"225 Header follows"));
         assert!(String::from_utf8_lossy(&encoded).contains("100 Test Subject"));
@@ -611,9 +641,13 @@ mod tests {
     #[test]
     fn test_response_encoding_overview_data() {
         use crate::response::OverviewEntry;
-        let overview = Response::OverviewData(vec![
-            OverviewEntry { fields: vec!["100".to_string(), "Subject".to_string(), "from@x.com".to_string()] },
-        ]);
+        let overview = Response::OverviewData(vec![OverviewEntry {
+            fields: vec![
+                "100".to_string(),
+                "Subject".to_string(),
+                "from@x.com".to_string(),
+            ],
+        }]);
         let encoded = encode_response(&overview).unwrap();
         assert!(encoded.starts_with(b"224 Overview information follows"));
     }
@@ -627,17 +661,28 @@ mod tests {
 
     #[test]
     fn test_response_encoding_success() {
-        let success = Response::Success { code: 200, message: "OK".to_string() };
+        let success = Response::Success {
+            code: 200,
+            message: "OK".to_string(),
+        };
         let encoded = encode_response(&success).unwrap();
         assert_eq!(encoded, b"200 OK\r\n");
     }
 
     #[test]
     fn test_response_encoding_tls() {
-        assert_eq!(encode_response(&Response::TlsReady).unwrap(), b"382 Continue with TLS negotiation\r\n");
-        
-        let tls_unavailable = Response::TlsNotAvailable { message: "Try later".to_string() };
-        assert_eq!(encode_response(&tls_unavailable).unwrap(), b"483 Try later\r\n");
+        assert_eq!(
+            encode_response(&Response::TlsReady).unwrap(),
+            b"382 Continue with TLS negotiation\r\n"
+        );
+
+        let tls_unavailable = Response::TlsNotAvailable {
+            message: "Try later".to_string(),
+        };
+        assert_eq!(
+            encode_response(&tls_unavailable).unwrap(),
+            b"483 Try later\r\n"
+        );
     }
 
     #[test]
@@ -648,17 +693,19 @@ mod tests {
         )];
 
         let mut mock = MockServer::new(interactions);
-        
+
         // Complete the interaction
         mock.handle_command(&Command::Capabilities).unwrap();
         assert!(mock.is_complete());
-        
+
         // Reset with new interactions
         mock.reset(vec![(
             Command::ModeReader,
-            Response::ModeReader { posting_allowed: true },
+            Response::ModeReader {
+                posting_allowed: true,
+            },
         )]);
-        
+
         assert!(!mock.is_complete());
         assert_eq!(mock.remaining_interactions(), 1);
     }
@@ -666,7 +713,7 @@ mod tests {
     #[test]
     fn test_mock_server_no_more_interactions_strict() {
         let mut mock = MockServer::new(vec![]);
-        
+
         let result = mock.handle_command(&Command::Capabilities);
         assert!(result.is_err());
     }
@@ -674,7 +721,7 @@ mod tests {
     #[test]
     fn test_mock_server_no_more_interactions_relaxed() {
         let mut mock = MockServer::new_relaxed(vec![]);
-        
+
         let response = mock.handle_command(&Command::Capabilities).unwrap();
         if let Response::Error { code, .. } = response {
             assert_eq!(code, 500);
@@ -691,7 +738,7 @@ mod tests {
         )];
 
         let mut test = ClientMockTest::new(interactions);
-        
+
         // Test accessors
         assert!(test.client().is_ready());
         assert!(test.client_mut().is_ready());
@@ -707,11 +754,11 @@ mod tests {
         )];
 
         let mut test = ClientMockTest::new_relaxed(interactions);
-        
+
         // Send expected command
         let response = test.send_command(Command::Capabilities).unwrap();
         assert!(matches!(response, Response::Capabilities(_)));
-        
+
         // In relaxed mode, unexpected commands get an error response
         let response = test.send_command(Command::Help);
         // Should get either an error or the result
@@ -721,24 +768,45 @@ mod tests {
     #[test]
     fn test_client_mock_test_send_command() {
         let interactions = vec![
-            (Command::ModeReader, Response::ModeReader { posting_allowed: true }),
-            (Command::Group("test.group".to_string()), Response::GroupSelected { 
-                count: 100, 
-                first: 1, 
-                last: 100, 
-                name: "test.group".to_string() 
-            }),
+            (
+                Command::ModeReader,
+                Response::ModeReader {
+                    posting_allowed: true,
+                },
+            ),
+            (
+                Command::Group("test.group".to_string()),
+                Response::GroupSelected {
+                    count: 100,
+                    first: 1,
+                    last: 100,
+                    name: "test.group".to_string(),
+                },
+            ),
         ];
 
         let mut test = ClientMockTest::new(interactions);
-        
+
         // Send first command
         let response = test.send_command(Command::ModeReader).unwrap();
-        assert!(matches!(response, Response::ModeReader { posting_allowed: true }));
-        
+        assert!(matches!(
+            response,
+            Response::ModeReader {
+                posting_allowed: true
+            }
+        ));
+
         // Send second command
-        let response = test.send_command(Command::Group("test.group".to_string())).unwrap();
-        if let Response::GroupSelected { name, count, first, last } = response {
+        let response = test
+            .send_command(Command::Group("test.group".to_string()))
+            .unwrap();
+        if let Response::GroupSelected {
+            name,
+            count,
+            first,
+            last,
+        } = response
+        {
             assert_eq!(name, "test.group");
             assert_eq!(count, 100);
             assert_eq!(first, 1);
@@ -746,7 +814,7 @@ mod tests {
         } else {
             panic!("Expected GroupSelected");
         }
-        
+
         assert!(test.is_complete());
     }
 }

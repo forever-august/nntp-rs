@@ -252,7 +252,7 @@ mod tests {
     fn test_article_no_number() {
         let content = b"From: test@example.com\r\nSubject: Test\r\n\r\nBody\r\n".to_vec();
         let article = Article::new(None, "<test@example.com>".to_string(), content);
-        
+
         assert_eq!(article.number(), None);
         assert_eq!(article.article_id(), "<test@example.com>");
     }
@@ -261,7 +261,7 @@ mod tests {
     fn test_article_date() {
         let content = b"From: test@example.com\r\nDate: Mon, 01 Jan 2024 12:00:00 +0000\r\nSubject: Test\r\n\r\nBody\r\n".to_vec();
         let article = Article::new(Some(1), "<test@example.com>".to_string(), content);
-        
+
         let date = article.date();
         assert!(date.is_some());
     }
@@ -270,7 +270,7 @@ mod tests {
     fn test_article_references() {
         let content = b"From: test@example.com\r\nReferences: <parent@example.com> <grandparent@example.com>\r\nSubject: Test\r\n\r\nBody\r\n".to_vec();
         let article = Article::new(Some(1), "<test@example.com>".to_string(), content);
-        
+
         let refs = article.references();
         // References may or may not be parsed depending on mail-parser behavior
         if let Some(refs_str) = refs {
@@ -282,10 +282,10 @@ mod tests {
     fn test_article_custom_header() {
         let content = b"From: test@example.com\r\nX-Custom-Header: custom value\r\nSubject: Test\r\n\r\nBody\r\n".to_vec();
         let article = Article::new(Some(1), "<test@example.com>".to_string(), content);
-        
+
         let custom = article.header("X-Custom-Header");
         assert_eq!(custom, Some("custom value".to_string()));
-        
+
         // Non-existent header
         let missing = article.header("X-Missing");
         assert!(missing.is_none());
@@ -296,7 +296,7 @@ mod tests {
         // Test with LF-only line endings (some servers do this)
         let content = b"From: test@example.com\nSubject: Test\n\nBody\n".to_vec();
         let article = Article::new(Some(1), "<test@example.com>".to_string(), content);
-        
+
         let raw_headers = article.raw_headers();
         assert!(raw_headers.is_some());
     }
@@ -305,7 +305,7 @@ mod tests {
     fn test_article_raw_body_lf_only() {
         let content = b"From: test@example.com\nSubject: Test\n\nBody content here\n".to_vec();
         let article = Article::new(Some(1), "<test@example.com>".to_string(), content);
-        
+
         let raw_body = article.raw_body();
         assert!(raw_body.is_some());
         assert!(raw_body.unwrap().starts_with(b"Body"));
@@ -315,7 +315,7 @@ mod tests {
     fn test_article_part_count() {
         let content = b"From: test@example.com\r\nSubject: Test\r\n\r\nSimple body\r\n".to_vec();
         let article = Article::new(Some(1), "<test@example.com>".to_string(), content);
-        
+
         // Simple message should have 1 part
         assert!(article.part_count() >= 1 || article.part_count() == 0);
     }
@@ -324,7 +324,7 @@ mod tests {
     fn test_article_body_html_none() {
         let content = b"From: test@example.com\r\nContent-Type: text/plain\r\nSubject: Test\r\n\r\nPlain text only\r\n".to_vec();
         let article = Article::new(Some(1), "<test@example.com>".to_string(), content);
-        
+
         // Plain text message typically has no HTML body, but mail-parser may still return something
         // Just verify we can call the method without error
         let _ = article.body_html();
@@ -335,7 +335,7 @@ mod tests {
         // Edge case: content without clear header/body separator
         let content = b"Just some content without headers".to_vec();
         let article = Article::new(Some(1), "<test@example.com>".to_string(), content);
-        
+
         assert!(article.raw_headers().is_none());
         assert!(article.raw_body().is_none());
     }
@@ -358,10 +358,11 @@ Content-Disposition: attachment; filename=\"test.bin\"\r\n\
 Content-Transfer-Encoding: base64\r\n\
 \r\n\
 SGVsbG8gV29ybGQh\r\n\
---boundary123--\r\n".to_vec();
-        
+--boundary123--\r\n"
+            .to_vec();
+
         let article = Article::new(Some(1), "<test@example.com>".to_string(), content);
-        
+
         // Check if attachments can be retrieved
         let attachments = article.attachments();
         // The attachment may or may not be parsed depending on mail-parser behavior
@@ -373,7 +374,7 @@ SGVsbG8gV29ybGQh\r\n\
     fn test_article_attachments_empty_for_simple_message() {
         let content = b"From: test@example.com\r\nSubject: Simple\r\n\r\nJust text\r\n".to_vec();
         let article = Article::new(Some(1), "<test@example.com>".to_string(), content);
-        
+
         let attachments = article.attachments();
         assert!(attachments.is_empty());
     }

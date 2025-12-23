@@ -12,9 +12,9 @@ mod article;
 mod metadata;
 pub mod wrappers;
 
-pub use article::{Article, Attachment};
 #[allow(deprecated)]
 pub use article::ParsedArticle;
+pub use article::{Article, Attachment};
 pub use metadata::{HeaderEntry, NewsGroup, OverviewEntry};
 pub use wrappers::*;
 
@@ -134,7 +134,6 @@ pub enum Response {
     },
 
     // RFC 4642 (STARTTLS) responses
-
     /// TLS negotiation may begin (382 response).
     ///
     /// After receiving this response, the client should immediately begin
@@ -583,7 +582,7 @@ fn parse_article_status(message: &str) -> Result<Response> {
 /// for the numeric fields (0 for first/last, 'y' for posting_status).
 fn parse_newsgroup_line(line: &str) -> Option<NewsGroup> {
     let parts: Vec<&str> = line.split_whitespace().collect();
-    
+
     // Try parsing as LIST ACTIVE format first (4+ fields: name, last, first, posting_status)
     if parts.len() >= 4 {
         if let (Ok(last), Ok(first)) = (parts[1].parse::<u64>(), parts[2].parse::<u64>()) {
@@ -597,7 +596,7 @@ fn parse_newsgroup_line(line: &str) -> Option<NewsGroup> {
             }
         }
     }
-    
+
     // Fall back to LIST NEWSGROUPS format (1+ fields: name [description...])
     // For NEWSGROUPS, we only have the group name, so use default values for the rest
     if !parts.is_empty() {
@@ -608,7 +607,7 @@ fn parse_newsgroup_line(line: &str) -> Option<NewsGroup> {
             posting_status: 'y', // Default to posting allowed
         });
     }
-    
+
     None
 }
 
@@ -877,10 +876,7 @@ mod tests {
             // which got converted to valid UTF-8 characters (replacement chars or similar)
             assert!(message.contains("Error"));
         } else {
-            panic!(
-                "Expected Error response, got: {:?}",
-                response
-            );
+            panic!("Expected Error response, got: {:?}", response);
         }
     }
 
@@ -951,14 +947,17 @@ mod tests {
     #[test]
     fn test_error_helper_methods() {
         // Test is_error
-        let error = Response::Error { code: 500, message: "test".to_string() };
+        let error = Response::Error {
+            code: 500,
+            message: "test".to_string(),
+        };
         assert!(error.is_error());
         assert!(!Response::Quit.is_error());
-        
+
         // Test error_code
         assert_eq!(error.error_code(), Some(500));
         assert_eq!(Response::Quit.error_code(), None);
-        
+
         // Test error_message
         assert_eq!(error.error_message(), Some("test"));
         assert_eq!(Response::Quit.error_message(), None);
@@ -966,82 +965,127 @@ mod tests {
 
     #[test]
     fn test_is_service_discontinued() {
-        let error = Response::Error { code: 400, message: "Service discontinued".to_string() };
+        let error = Response::Error {
+            code: 400,
+            message: "Service discontinued".to_string(),
+        };
         assert!(error.is_service_discontinued());
-        
-        let other = Response::Error { code: 500, message: "Other".to_string() };
+
+        let other = Response::Error {
+            code: 500,
+            message: "Other".to_string(),
+        };
         assert!(!other.is_service_discontinued());
     }
 
     #[test]
     fn test_is_no_such_newsgroup() {
-        let error = Response::Error { code: 411, message: "No such newsgroup".to_string() };
+        let error = Response::Error {
+            code: 411,
+            message: "No such newsgroup".to_string(),
+        };
         assert!(error.is_no_such_newsgroup());
-        
-        let other = Response::Error { code: 412, message: "Other".to_string() };
+
+        let other = Response::Error {
+            code: 412,
+            message: "Other".to_string(),
+        };
         assert!(!other.is_no_such_newsgroup());
     }
 
     #[test]
     fn test_is_no_newsgroup_selected() {
-        let error = Response::Error { code: 412, message: "No newsgroup selected".to_string() };
+        let error = Response::Error {
+            code: 412,
+            message: "No newsgroup selected".to_string(),
+        };
         assert!(error.is_no_newsgroup_selected());
-        
-        let other = Response::Error { code: 411, message: "Other".to_string() };
+
+        let other = Response::Error {
+            code: 411,
+            message: "Other".to_string(),
+        };
         assert!(!other.is_no_newsgroup_selected());
     }
 
     #[test]
     fn test_is_no_current_article() {
-        let error = Response::Error { code: 420, message: "No current article".to_string() };
+        let error = Response::Error {
+            code: 420,
+            message: "No current article".to_string(),
+        };
         assert!(error.is_no_current_article());
     }
 
     #[test]
     fn test_is_no_next_article() {
-        let error = Response::Error { code: 421, message: "No next article".to_string() };
+        let error = Response::Error {
+            code: 421,
+            message: "No next article".to_string(),
+        };
         assert!(error.is_no_next_article());
     }
 
     #[test]
     fn test_is_no_previous_article() {
-        let error = Response::Error { code: 422, message: "No previous article".to_string() };
+        let error = Response::Error {
+            code: 422,
+            message: "No previous article".to_string(),
+        };
         assert!(error.is_no_previous_article());
     }
 
     #[test]
     fn test_is_no_such_article() {
-        let error = Response::Error { code: 430, message: "No such article".to_string() };
+        let error = Response::Error {
+            code: 430,
+            message: "No such article".to_string(),
+        };
         assert!(error.is_no_such_article());
     }
 
     #[test]
     fn test_is_auth_required() {
-        let error = Response::Error { code: 480, message: "Authentication required".to_string() };
+        let error = Response::Error {
+            code: 480,
+            message: "Authentication required".to_string(),
+        };
         assert!(error.is_auth_required());
     }
 
     #[test]
     fn test_is_command_not_recognized() {
-        let error = Response::Error { code: 500, message: "Command not recognized".to_string() };
+        let error = Response::Error {
+            code: 500,
+            message: "Command not recognized".to_string(),
+        };
         assert!(error.is_command_not_recognized());
     }
 
     #[test]
     fn test_is_command_syntax_error() {
-        let error = Response::Error { code: 501, message: "Syntax error".to_string() };
+        let error = Response::Error {
+            code: 501,
+            message: "Syntax error".to_string(),
+        };
         assert!(error.is_command_syntax_error());
     }
 
     #[test]
     fn test_is_access_denied() {
-        let error = Response::Error { code: 502, message: "Access denied".to_string() };
+        let error = Response::Error {
+            code: 502,
+            message: "Access denied".to_string(),
+        };
         assert!(error.is_access_denied());
     }
 
     #[test]
     fn test_is_program_fault() {
-        let error = Response::Error { code: 503, message: "Program fault".to_string() };
+        let error = Response::Error {
+            code: 503,
+            message: "Program fault".to_string(),
+        };
         assert!(error.is_program_fault());
     }
 
@@ -1067,14 +1111,24 @@ mod tests {
     fn test_parse_mode_reader_posting_allowed() {
         let response = "200 Reader mode, posting allowed";
         let parsed = Response::parse_str(response).unwrap();
-        assert_eq!(parsed, Response::ModeReader { posting_allowed: true });
+        assert_eq!(
+            parsed,
+            Response::ModeReader {
+                posting_allowed: true
+            }
+        );
     }
 
     #[test]
     fn test_parse_mode_reader_posting_prohibited() {
         let response = "201 Reader mode, posting prohibited";
         let parsed = Response::parse_str(response).unwrap();
-        assert_eq!(parsed, Response::ModeReader { posting_allowed: false });
+        assert_eq!(
+            parsed,
+            Response::ModeReader {
+                posting_allowed: false
+            }
+        );
     }
 
     #[test]
@@ -1101,7 +1155,10 @@ mod tests {
         let response = "220 0 <test@example.com>\r\nSubject: Test\r\n\r\nBody\r\n.\r\n";
         let parsed = Response::parse_str(response).unwrap();
 
-        if let Response::Article { number, message_id, .. } = parsed {
+        if let Response::Article {
+            number, message_id, ..
+        } = parsed
+        {
             assert_eq!(number, None); // 0 means no article number
             assert_eq!(message_id, "<test@example.com>");
         } else {
@@ -1111,10 +1168,16 @@ mod tests {
 
     #[test]
     fn test_parse_article_head_response() {
-        let response = "221 123 <test@example.com>\r\nSubject: Test\r\nFrom: user@example.com\r\n.\r\n";
+        let response =
+            "221 123 <test@example.com>\r\nSubject: Test\r\nFrom: user@example.com\r\n.\r\n";
         let parsed = Response::parse_str(response).unwrap();
 
-        if let Response::Article { number, message_id, content } = parsed {
+        if let Response::Article {
+            number,
+            message_id,
+            content,
+        } = parsed
+        {
             assert_eq!(number, Some(123));
             assert_eq!(message_id, "<test@example.com>");
             assert!(!content.is_empty());
@@ -1128,7 +1191,12 @@ mod tests {
         let response = "222 123 <test@example.com>\r\nThis is the body.\r\n.\r\n";
         let parsed = Response::parse_str(response).unwrap();
 
-        if let Response::Article { number, message_id, content } = parsed {
+        if let Response::Article {
+            number,
+            message_id,
+            content,
+        } = parsed
+        {
             assert_eq!(number, Some(123));
             assert_eq!(message_id, "<test@example.com>");
             assert!(!content.is_empty());
@@ -1152,7 +1220,8 @@ mod tests {
 
     #[test]
     fn test_parse_new_articles_response() {
-        let response = "230 New articles follow\r\n<msg1@example.com>\r\n<msg2@example.com>\r\n.\r\n";
+        let response =
+            "230 New articles follow\r\n<msg1@example.com>\r\n<msg2@example.com>\r\n.\r\n";
         let parsed = Response::parse_str(response).unwrap();
 
         if let Response::NewArticles(articles) = parsed {
@@ -1329,7 +1398,8 @@ mod tests {
     #[test]
     fn test_parse_newsgroup_list_active_response() {
         // Test full LIST ACTIVE response
-        let response = "215 List of newsgroups follows\r\ncomp.lang.rust 1000 1 y\r\nalt.test 50 1 n\r\n.\r\n";
+        let response =
+            "215 List of newsgroups follows\r\ncomp.lang.rust 1000 1 y\r\nalt.test 50 1 n\r\n.\r\n";
         let parsed = Response::parse_str(response).unwrap();
 
         if let Response::NewsgroupList(groups) = parsed {

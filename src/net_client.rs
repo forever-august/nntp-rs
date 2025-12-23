@@ -75,8 +75,8 @@
 //! ```
 
 use crate::response::{
-    ArticleNumbers, ArticlePointer, Capabilities, GroupStats, HeaderData, HelpText,
-    MessageIdList, NewsgroupList, OverviewData, PostingStatus, ServerDate,
+    ArticleNumbers, ArticlePointer, Capabilities, GroupStats, HeaderData, HelpText, MessageIdList,
+    NewsgroupList, OverviewData, PostingStatus, ServerDate,
 };
 use crate::runtime::AsyncStream;
 use crate::{Client, Command, Error, Response, Result};
