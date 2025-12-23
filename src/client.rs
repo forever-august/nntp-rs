@@ -177,6 +177,15 @@ impl Client {
                     });
                 }
             }
+            Command::Xover { range: None } | Command::Xhdr { range: None, .. } => {
+                // XOVER and XHDR without range require current group selection
+                if self.current_group().is_none() {
+                    return Err(Error::Protocol {
+                        code: 412,
+                        message: "No newsgroup has been selected".to_string(),
+                    });
+                }
+            }
             // Commands that might require authentication based on server policy
             Command::Post => {
                 // Note: Some servers require authentication for posting
@@ -278,12 +287,7 @@ fn is_multiline_response(code: u16) -> bool {
 
 /// Find the position of the first CRLF sequence in the buffer.
 fn find_crlf(data: &[u8]) -> Option<usize> {
-    for i in 0..data.len().saturating_sub(1) {
-        if data[i] == b'\r' && data[i + 1] == b'\n' {
-            return Some(i);
-        }
-    }
-    None
+    (0..data.len().saturating_sub(1)).find(|&i| data[i] == b'\r' && data[i + 1] == b'\n')
 }
 
 /// Find the position of the multiline terminator "\r\n.\r\n" in the buffer.
@@ -291,17 +295,13 @@ fn find_terminator(data: &[u8]) -> Option<usize> {
     if data.len() < 5 {
         return None;
     }
-    for i in 0..=data.len() - 5 {
-        if data[i] == b'\r'
+    (0..=data.len() - 5).find(|&i| {
+        data[i] == b'\r'
             && data[i + 1] == b'\n'
             && data[i + 2] == b'.'
             && data[i + 3] == b'\r'
             && data[i + 4] == b'\n'
-        {
-            return Some(i);
-        }
-    }
-    None
+    })
 }
 
 /// Parse a 3-digit ASCII status code from bytes.
@@ -313,9 +313,8 @@ fn parse_status_code(data: &[u8]) -> Option<u16> {
     if !data[0].is_ascii_digit() || !data[1].is_ascii_digit() || !data[2].is_ascii_digit() {
         return None;
     }
-    let code = (data[0] - b'0') as u16 * 100
-        + (data[1] - b'0') as u16 * 10
-        + (data[2] - b'0') as u16;
+    let code =
+        (data[0] - b'0') as u16 * 100 + (data[1] - b'0') as u16 * 10 + (data[2] - b'0') as u16;
     Some(code)
 }
 

@@ -9,14 +9,24 @@ pub enum ListVariant {
     Active(Option<String>),
     /// LIST NEWSGROUPS \[wildmat\] - Newsgroup descriptions (RFC 3977 Section 7.6.6)
     Newsgroups(Option<String>),
-    /// LIST HEADERS - Available header fields for HDR command
+    /// LIST HEADERS \[MSGID|RANGE\] - Available header fields for HDR command (RFC 3977 Section 8.6)
     Headers,
-    /// LIST ACTIVE.TIMES - Newsgroup creation times (RFC 3977 Section 7.6.4)
+    /// LIST ACTIVE.TIMES \[wildmat\] - Newsgroup creation times (RFC 3977 Section 7.6.4)
     ActiveTimes,
     /// LIST DISTRIBUTIONS - Distribution values (RFC 3977 Section 7.6.5)
     Distributions,
-    /// LIST OVERVIEW.FMT - Overview format specification
+    /// LIST DISTRIB.PATS - Default distribution patterns (RFC 3977 Section 7.6.5)
+    DistribPats,
+    /// LIST OVERVIEW.FMT - Overview format specification (RFC 3977 Section 8.4)
     OverviewFmt,
+    /// LIST COUNTS \[wildmat\] - Newsgroup counts (optional, supported by some servers)
+    Counts(Option<String>),
+    /// LIST MODERATORS - Newsgroup moderator patterns (optional, supported by some servers)
+    Moderators,
+    /// LIST MOTD - Message of the day (optional, supported by some servers)
+    Motd,
+    /// LIST SUBSCRIPTIONS - Default subscription list (RFC 2980)
+    Subscriptions,
     /// LIST \[wildmat\] - Basic list (backwards compatibility)
     Basic(Option<String>),
 }
@@ -107,8 +117,34 @@ pub enum Command {
         range: Option<String>,
     },
 
-    /// Retrieve overview information for articles
+    /// Retrieve overview information for articles (RFC 3977)
     Over {
+        /// Range specification (message-id, number, or range)
+        range: Option<String>,
+    },
+
+    /// Retrieve overview information for articles (RFC 2980 legacy command)
+    ///
+    /// XOVER is the legacy command name from RFC 2980. It has been formalized
+    /// as OVER in RFC 3977. This variant exists for compatibility with older
+    /// servers that only support XOVER.
+    ///
+    /// The functionality is identical to [`Command::Over`].
+    Xover {
+        /// Range specification (number, or range)
+        range: Option<String>,
+    },
+
+    /// Retrieve specific header field for articles (RFC 2980 legacy command)
+    ///
+    /// XHDR is the legacy command name from RFC 2980. It has been formalized
+    /// as HDR in RFC 3977. This variant exists for compatibility with older
+    /// servers that only support XHDR.
+    ///
+    /// The functionality is identical to [`Command::Hdr`].
+    Xhdr {
+        /// Header field name (e.g. "Subject", "From")
+        field: String,
         /// Range specification (message-id, number, or range)
         range: Option<String>,
     },
@@ -216,7 +252,19 @@ impl Command {
                 ListVariant::Headers => "LIST HEADERS".to_string(),
                 ListVariant::ActiveTimes => "LIST ACTIVE.TIMES".to_string(),
                 ListVariant::Distributions => "LIST DISTRIBUTIONS".to_string(),
+                ListVariant::DistribPats => "LIST DISTRIB.PATS".to_string(),
                 ListVariant::OverviewFmt => "LIST OVERVIEW.FMT".to_string(),
+                ListVariant::Counts(pattern) => {
+                    if let Some(pattern) = pattern {
+                        validate_parameter(pattern)?;
+                        format!("LIST COUNTS {pattern}")
+                    } else {
+                        "LIST COUNTS".to_string()
+                    }
+                }
+                ListVariant::Moderators => "LIST MODERATORS".to_string(),
+                ListVariant::Motd => "LIST MOTD".to_string(),
+                ListVariant::Subscriptions => "LIST SUBSCRIPTIONS".to_string(),
                 ListVariant::Basic(pattern) => {
                     if let Some(pattern) = pattern {
                         validate_parameter(pattern)?;
@@ -281,6 +329,23 @@ impl Command {
                     format!("OVER {range}")
                 } else {
                     "OVER".to_string()
+                }
+            }
+            Command::Xover { range } => {
+                if let Some(range) = range {
+                    validate_parameter(range)?;
+                    format!("XOVER {range}")
+                } else {
+                    "XOVER".to_string()
+                }
+            }
+            Command::Xhdr { field, range } => {
+                validate_parameter(field)?;
+                if let Some(range) = range {
+                    validate_parameter(range)?;
+                    format!("XHDR {field} {range}")
+                } else {
+                    format!("XHDR {field}")
                 }
             }
             Command::Ihave { message_id } => {
@@ -465,6 +530,71 @@ mod tests {
     }
 
     #[test]
+    fn test_xover_command_simple() {
+        let cmd = Command::Xover { range: None };
+        let encoded = cmd.encode().unwrap();
+        assert_eq!(encoded, b"XOVER\r\n");
+    }
+
+    #[test]
+    fn test_xover_command_with_range() {
+        let cmd = Command::Xover {
+            range: Some("3000-3002".to_string()),
+        };
+        let encoded = cmd.encode().unwrap();
+        assert_eq!(encoded, b"XOVER 3000-3002\r\n");
+    }
+
+    #[test]
+    fn test_xhdr_command_simple() {
+        let cmd = Command::Xhdr {
+            field: "Subject".to_string(),
+            range: None,
+        };
+        let encoded = cmd.encode().unwrap();
+        assert_eq!(encoded, b"XHDR Subject\r\n");
+    }
+
+    #[test]
+    fn test_xhdr_command_with_range() {
+        let cmd = Command::Xhdr {
+            field: "From".to_string(),
+            range: Some("1-10".to_string()),
+        };
+        let encoded = cmd.encode().unwrap();
+        assert_eq!(encoded, b"XHDR From 1-10\r\n");
+    }
+
+    #[test]
+    fn test_xhdr_command_with_message_id() {
+        let cmd = Command::Xhdr {
+            field: "Subject".to_string(),
+            range: Some("<test@example.com>".to_string()),
+        };
+        let encoded = cmd.encode().unwrap();
+        assert_eq!(encoded, b"XHDR Subject <test@example.com>\r\n");
+    }
+
+    #[test]
+    fn test_xover_with_invalid_range() {
+        let cmd = Command::Xover {
+            range: Some("1-10\r\n".to_string()),
+        };
+        let result = cmd.encode();
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_xhdr_with_invalid_field() {
+        let cmd = Command::Xhdr {
+            field: "Subject\r\n".to_string(),
+            range: None,
+        };
+        let result = cmd.encode();
+        assert!(result.is_err());
+    }
+
+    #[test]
     fn test_ihave_command() {
         let cmd = Command::Ihave {
             message_id: "<article@example.com>".to_string(),
@@ -605,6 +735,48 @@ mod tests {
         let cmd = Command::List(ListVariant::Distributions);
         let encoded = cmd.encode().unwrap();
         assert_eq!(encoded, b"LIST DISTRIBUTIONS\r\n");
+    }
+
+    #[test]
+    fn test_list_distrib_pats() {
+        let cmd = Command::List(ListVariant::DistribPats);
+        let encoded = cmd.encode().unwrap();
+        assert_eq!(encoded, b"LIST DISTRIB.PATS\r\n");
+    }
+
+    #[test]
+    fn test_list_counts_no_pattern() {
+        let cmd = Command::List(ListVariant::Counts(None));
+        let encoded = cmd.encode().unwrap();
+        assert_eq!(encoded, b"LIST COUNTS\r\n");
+    }
+
+    #[test]
+    fn test_list_counts_with_pattern() {
+        let cmd = Command::List(ListVariant::Counts(Some("comp.*".to_string())));
+        let encoded = cmd.encode().unwrap();
+        assert_eq!(encoded, b"LIST COUNTS comp.*\r\n");
+    }
+
+    #[test]
+    fn test_list_moderators() {
+        let cmd = Command::List(ListVariant::Moderators);
+        let encoded = cmd.encode().unwrap();
+        assert_eq!(encoded, b"LIST MODERATORS\r\n");
+    }
+
+    #[test]
+    fn test_list_motd() {
+        let cmd = Command::List(ListVariant::Motd);
+        let encoded = cmd.encode().unwrap();
+        assert_eq!(encoded, b"LIST MOTD\r\n");
+    }
+
+    #[test]
+    fn test_list_subscriptions() {
+        let cmd = Command::List(ListVariant::Subscriptions);
+        let encoded = cmd.encode().unwrap();
+        assert_eq!(encoded, b"LIST SUBSCRIPTIONS\r\n");
     }
 
     #[test]

@@ -137,6 +137,31 @@ let cmd = Command::NewGroups {
 };
 ```
 
+### XOVER/XHDR Commands (RFC 2980 Compatibility)
+```rust
+use nntp_rs::Command;
+
+// XOVER - legacy overview command
+let cmd = Command::Xover {
+    range: Some("3000-3002".to_string()),
+};
+
+// XHDR - legacy header retrieval
+let cmd = Command::Xhdr {
+    field: "Subject".to_string(),
+    range: Some("3000-3002".to_string()),
+};
+
+// Modern equivalents (RFC 3977)
+let cmd = Command::Over {
+    range: Some("3000-3002".to_string()),
+};
+let cmd = Command::Hdr {
+    field: "Subject".to_string(),
+    range: Some("3000-3002".to_string()),
+};
+```
+
 ## Feature Flags
 - `tokio-runtime`: Enables Tokio integration
 - `async-std-runtime`: Enables async-std integration  
@@ -153,6 +178,7 @@ Implements comprehensive NNTP command set with **enhanced RFC 3977 compliance**:
 - Article retrieval (ARTICLE, HEAD, BODY, STAT)
 - Navigation (LAST, NEXT)
 - Metadata (HDR, OVER, DATE, HELP)
+- Legacy metadata commands (XHDR, XOVER - RFC 2980 compatibility)
 - Posting (POST, IHAVE)
 - News discovery (NEWGROUPS, NEWNEWS)
 
@@ -162,8 +188,17 @@ Implements comprehensive NNTP command set with **enhanced RFC 3977 compliance**:
 - `LIST HEADERS` - Available header fields for HDR command
 - `LIST ACTIVE.TIMES` - Newsgroup creation times
 - `LIST DISTRIBUTIONS` - Distribution values
+- `LIST DISTRIB.PATS` - Default distribution patterns
 - `LIST OVERVIEW.FMT` - Overview format specification
+- `LIST COUNTS [wildmat]` - Newsgroup counts (server-dependent)
+- `LIST MODERATORS` - Newsgroup moderator patterns
+- `LIST MOTD` - Message of the day (server-dependent)
+- `LIST SUBSCRIPTIONS` - Default subscription list (RFC 2980)
 - `LIST [wildmat]` - Basic list (backwards compatibility)
+
+### Legacy Commands (RFC 2980 Compatibility)
+- `XOVER [range]` - Legacy overview command (use OVER for RFC 3977)
+- `XHDR field [range]` - Legacy header command (use HDR for RFC 3977)
 
 ### RFC 3977 Compliance Features
 - **Command Length Validation**: Enforces 512-octet limit (RFC 3977 Section 3.1)
