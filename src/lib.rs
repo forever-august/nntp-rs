@@ -53,10 +53,17 @@ pub mod error;
     feature = "async-std-runtime",
     feature = "smol-runtime"
 ))]
-#[cfg_attr(docsrs, doc(cfg(any(feature = "tokio-runtime", feature = "async-std-runtime", feature = "smol-runtime"))))]
+#[cfg_attr(
+    docsrs,
+    doc(cfg(any(
+        feature = "tokio-runtime",
+        feature = "async-std-runtime",
+        feature = "smol-runtime"
+    )))
+)]
 pub mod net_client;
 pub mod response;
-pub mod threading;
+pub mod utils;
 
 // Async runtime integrations - access via runtime::tokio, runtime::async_std, runtime::smol
 #[cfg(any(
@@ -64,7 +71,14 @@ pub mod threading;
     feature = "async-std-runtime",
     feature = "smol-runtime"
 ))]
-#[cfg_attr(docsrs, doc(cfg(any(feature = "tokio-runtime", feature = "async-std-runtime", feature = "smol-runtime"))))]
+#[cfg_attr(
+    docsrs,
+    doc(cfg(any(
+        feature = "tokio-runtime",
+        feature = "async-std-runtime",
+        feature = "smol-runtime"
+    )))
+)]
 pub mod runtime;
 
 // Mock server for testing
@@ -86,16 +100,6 @@ pub use response::ParsedArticle;
 // Re-export mail_parser::Message for structured article parsing
 pub use mail_parser::Message;
 
-// === Threading Types ===
+// === Utility Functions ===
 
-pub use threading::{
-    ArticleBuilder, FetchedArticle, Thread, ThreadCollection, ThreadNode,
-    ThreadedArticleRef,
-};
-
-#[cfg(any(
-    feature = "tokio-runtime",
-    feature = "async-std-runtime",
-    feature = "smol-runtime"
-))]
-pub use threading::NntpClientThreadingExt;
+pub use utils::{normalize_subject, parse_references};

@@ -40,12 +40,6 @@ pub enum Error {
         feature = "smol-runtime"
     ))]
     Connection(String),
-
-    /// Error building an article for posting
-    ArticleBuilder(String),
-
-    /// Thread not found
-    ThreadNotFound(String),
 }
 
 impl fmt::Display for Error {
@@ -67,8 +61,6 @@ impl fmt::Display for Error {
                 feature = "smol-runtime"
             ))]
             Error::Connection(msg) => write!(f, "Connection error: {msg}"),
-            Error::ArticleBuilder(msg) => write!(f, "Article builder error: {msg}"),
-            Error::ThreadNotFound(msg) => write!(f, "Thread not found: {msg}"),
         }
     }
 }
@@ -115,18 +107,6 @@ mod tests {
     fn test_error_display_invalid_command() {
         let err = Error::InvalidCommand("bad command".to_string());
         assert_eq!(format!("{}", err), "Invalid command: bad command");
-    }
-
-    #[test]
-    fn test_error_display_article_builder() {
-        let err = Error::ArticleBuilder("missing field".to_string());
-        assert_eq!(format!("{}", err), "Article builder error: missing field");
-    }
-
-    #[test]
-    fn test_error_display_thread_not_found() {
-        let err = Error::ThreadNotFound("thread123".to_string());
-        assert_eq!(format!("{}", err), "Thread not found: thread123");
     }
 
     #[cfg(any(
