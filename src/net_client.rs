@@ -130,6 +130,8 @@ pub struct NntpClient<S: AsyncStream> {
     client: Client,
     /// The async stream for network I/O.
     stream: S,
+    /// Whether posting is allowed on this connection.
+    posting_allowed: bool,
 }
 
 impl<S: AsyncStream> NntpClient<S> {
@@ -170,10 +172,14 @@ impl<S: AsyncStream> NntpClient<S> {
         let mut client = Self {
             client: Client::new(),
             stream,
+            posting_allowed: false,
         };
 
-        // Read initial server greeting
-        let _greeting = client.read_response().await?;
+        // Read initial server greeting and extract posting permission
+        let greeting = client.read_response().await?;
+        if let Response::ModeReader { posting_allowed } = greeting {
+            client.posting_allowed = posting_allowed;
+        }
 
         Ok(client)
     }
@@ -219,6 +225,10 @@ impl<S: AsyncStream> NntpClient<S> {
                 code: *code,
                 message: message.clone(),
             });
+        }
+        // Update posting_allowed from response
+        if let Response::ModeReader { posting_allowed } = &response {
+            self.posting_allowed = *posting_allowed;
         }
         response.try_into()
     }
@@ -716,6 +726,14 @@ impl<S: AsyncStream> NntpClient<S> {
             .await
             .map_err(|e| Error::Io(format!("Failed to shutdown connection: {e}")))?;
         Ok(())
+    }
+
+    /// Check if posting is allowed on this connection.
+    ///
+    /// This value is determined by the server's initial greeting (200 = allowed, 201 = prohibited)
+    /// and updated by MODE READER responses.
+    pub fn is_posting_allowed(&self) -> bool {
+        self.posting_allowed
     }
 
     /// Send a command and wait for response.

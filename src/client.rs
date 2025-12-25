@@ -10,6 +10,7 @@ use bytes::{BufMut, Bytes, BytesMut};
 pub struct Client {
     read_buffer: BytesMut,
     state: ClientState,
+    posting_allowed: bool,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -42,6 +43,7 @@ impl Client {
         Self {
             read_buffer: BytesMut::new(),
             state: ClientState::Connected,
+            posting_allowed: false,
         }
     }
 
@@ -113,6 +115,15 @@ impl Client {
             self.state,
             ClientState::Authenticated | ClientState::GroupSelected { .. }
         )
+    }
+
+    /// Check if posting is allowed.
+    ///
+    /// This value is determined by the server's greeting (200 = allowed, 201 = prohibited)
+    /// and updated by MODE READER responses. Returns `false` until a greeting or
+    /// MODE READER response is received.
+    pub fn is_posting_allowed(&self) -> bool {
+        self.posting_allowed
     }
 
     fn extract_complete_response(&mut self) -> Result<Option<Vec<u8>>> {
@@ -226,8 +237,9 @@ impl Client {
 
     fn update_state_for_response(&mut self, response: &Response) -> Result<()> {
         match response {
-            Response::ModeReader { .. } => {
+            Response::ModeReader { posting_allowed } => {
                 self.state = ClientState::Reader;
+                self.posting_allowed = *posting_allowed;
             }
             Response::AuthSuccess => {
                 self.state = ClientState::Authenticated;
@@ -758,5 +770,42 @@ mod tests {
         // Now should have complete response
         let response = client.decode_response().unwrap();
         assert!(response.is_some());
+    }
+
+    #[test]
+    fn test_posting_allowed_default() {
+        let client = Client::new();
+        assert!(!client.is_posting_allowed());
+    }
+
+    #[test]
+    fn test_posting_allowed_after_greeting_200() {
+        let mut client = Client::new();
+        client.feed_bytes(b"200 Reader mode, posting allowed\r\n");
+        client.decode_response().unwrap();
+        assert!(client.is_posting_allowed());
+    }
+
+    #[test]
+    fn test_posting_prohibited_after_greeting_201() {
+        let mut client = Client::new();
+        client.feed_bytes(b"201 Reader mode, posting prohibited\r\n");
+        client.decode_response().unwrap();
+        assert!(!client.is_posting_allowed());
+    }
+
+    #[test]
+    fn test_posting_allowed_updated_by_mode_reader() {
+        let mut client = Client::new();
+        // First receive 200 (posting allowed)
+        client.feed_bytes(b"200 Reader mode, posting allowed\r\n");
+        client.decode_response().unwrap();
+        assert!(client.is_posting_allowed());
+
+        // Then send MODE READER and receive 201 (posting prohibited)
+        client.encode_command(Command::ModeReader).unwrap();
+        client.feed_bytes(b"201 Reader mode, posting prohibited\r\n");
+        client.decode_response().unwrap();
+        assert!(!client.is_posting_allowed());
     }
 }
