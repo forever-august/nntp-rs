@@ -462,6 +462,353 @@ impl TryFrom<Response> for OverviewFormat {
     }
 }
 
+/// Newsgroup creation time entry.
+///
+/// Represents a single entry from LIST ACTIVE.TIMES response (RFC 3977 Section 7.6.4).
+/// Each entry contains the newsgroup name, creation time, and creator information.
+///
+/// # Format
+///
+/// The wire format is: `groupname timestamp creator`
+/// - `groupname` - The name of the newsgroup
+/// - `timestamp` - Unix timestamp (seconds since epoch) when the group was created
+/// - `creator` - Email address or identifier of who created the group
+///
+/// # Example
+///
+/// ```ignore
+/// let entry = ActiveTimeEntry {
+///     name: "comp.lang.rust".to_string(),
+///     timestamp: 1609459200,
+///     creator: "admin@example.com".to_string(),
+/// };
+/// ```
+#[derive(Debug, Clone, PartialEq)]
+pub struct ActiveTimeEntry {
+    /// Newsgroup name.
+    pub name: String,
+    /// Unix timestamp when the group was created.
+    pub timestamp: u64,
+    /// Email address or identifier of the creator.
+    pub creator: String,
+}
+
+/// List of newsgroup creation times.
+///
+/// Wraps a list of [`ActiveTimeEntry`] values returned by LIST ACTIVE.TIMES (215 response).
+/// Each entry contains the group name, creation timestamp, and creator information.
+///
+/// # Example
+///
+/// ```ignore
+/// let times: ActiveTimesList = response.try_into()?;
+/// for entry in times.iter() {
+///     println!("{} created at {} by {}", entry.name, entry.timestamp, entry.creator);
+/// }
+/// ```
+#[derive(Debug, Clone, PartialEq)]
+pub struct ActiveTimesList(pub Vec<ActiveTimeEntry>);
+
+impl Deref for ActiveTimesList {
+    type Target = Vec<ActiveTimeEntry>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+/// Distribution pattern entry.
+///
+/// Represents a single entry from LIST DISTRIB.PATS response (RFC 3977 Section 7.6.5).
+/// Each entry defines a default distribution for newsgroups matching a pattern.
+///
+/// # Format
+///
+/// The wire format is: `weight:wildmat:distribution`
+/// - `weight` - Numeric weight for pattern priority (higher = more specific)
+/// - `wildmat` - Wildcard pattern matching newsgroup names
+/// - `distribution` - Default distribution value to use
+///
+/// # Example
+///
+/// ```ignore
+/// let pat = DistribPat {
+///     weight: 10,
+///     wildmat: "comp.*".to_string(),
+///     distribution: "world".to_string(),
+/// };
+/// ```
+#[derive(Debug, Clone, PartialEq)]
+pub struct DistribPat {
+    /// Weight for pattern priority (higher = more specific).
+    pub weight: u32,
+    /// Wildcard pattern matching newsgroup names.
+    pub wildmat: String,
+    /// Default distribution value.
+    pub distribution: String,
+}
+
+/// List of distribution patterns.
+///
+/// Wraps a list of [`DistribPat`] values returned by LIST DISTRIB.PATS (215 response).
+/// Used to determine default Distribution header values for new posts.
+///
+/// # Example
+///
+/// ```ignore
+/// let pats: DistribPatsList = response.try_into()?;
+/// for pat in pats.iter() {
+///     println!("Weight {}: {} -> {}", pat.weight, pat.wildmat, pat.distribution);
+/// }
+/// ```
+#[derive(Debug, Clone, PartialEq)]
+pub struct DistribPatsList(pub Vec<DistribPat>);
+
+impl Deref for DistribPatsList {
+    type Target = Vec<DistribPat>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+/// List of available headers for HDR command.
+///
+/// Wraps a list of header/metadata field names returned by LIST HEADERS (215 response).
+/// These are the fields that can be retrieved using the HDR command.
+///
+/// # Standard Fields
+///
+/// Per RFC 3977 Section 8.6, the list typically includes:
+/// - Standard header names (e.g., "Subject", "From", "Date")
+/// - The special token ":" indicating all standard headers
+/// - Metadata items starting with ":" (e.g., ":bytes", ":lines")
+///
+/// # Example
+///
+/// ```ignore
+/// let headers: HeadersList = response.try_into()?;
+/// for field in headers.iter() {
+///     println!("Available header: {}", field);
+/// }
+/// ```
+#[derive(Debug, Clone, PartialEq)]
+pub struct HeadersList(pub Vec<String>);
+
+impl Deref for HeadersList {
+    type Target = Vec<String>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+/// Newsgroup counts entry.
+///
+/// Represents a single entry from LIST COUNTS response.
+/// Each entry contains newsgroup statistics including article counts.
+///
+/// # Format
+///
+/// The wire format is: `groupname count low high status`
+/// - `groupname` - The name of the newsgroup
+/// - `count` - Estimated number of articles
+/// - `low` - Lowest article number
+/// - `high` - Highest article number
+/// - `status` - Posting status character ('y', 'n', 'm', etc.)
+///
+/// # Note
+///
+/// LIST COUNTS is not defined in RFC 3977 but is supported by some servers.
+/// It's similar to LIST ACTIVE but may include more accurate counts.
+#[derive(Debug, Clone, PartialEq)]
+pub struct CountsEntry {
+    /// Newsgroup name.
+    pub name: String,
+    /// Estimated number of articles in the group.
+    pub count: u64,
+    /// Lowest article number in the group.
+    pub low: u64,
+    /// Highest article number in the group.
+    pub high: u64,
+    /// Posting status ('y' = posting allowed, 'n' = no posting, 'm' = moderated).
+    pub status: char,
+}
+
+/// List of newsgroup counts.
+///
+/// Wraps a list of [`CountsEntry`] values returned by LIST COUNTS.
+///
+/// # Example
+///
+/// ```ignore
+/// let counts: CountsList = response.try_into()?;
+/// for entry in counts.iter() {
+///     println!("{}: {} articles ({}-{})", entry.name, entry.count, entry.low, entry.high);
+/// }
+/// ```
+#[derive(Debug, Clone, PartialEq)]
+pub struct CountsList(pub Vec<CountsEntry>);
+
+impl Deref for CountsList {
+    type Target = Vec<CountsEntry>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+/// Moderator pattern entry.
+///
+/// Represents a single entry from LIST MODERATORS response.
+/// Each entry defines how to find the moderator email for newsgroups matching a pattern.
+///
+/// # Format
+///
+/// The wire format is: `wildmat:template`
+/// - `wildmat` - Wildcard pattern matching newsgroup names
+/// - `template` - Email template with %s replaced by group name components
+///
+/// # Example
+///
+/// ```ignore
+/// let mod_entry = ModeratorEntry {
+///     wildmat: "comp.*".to_string(),
+///     template: "%s@moderators.isc.org".to_string(),
+/// };
+/// ```
+#[derive(Debug, Clone, PartialEq)]
+pub struct ModeratorEntry {
+    /// Wildcard pattern matching newsgroup names.
+    pub wildmat: String,
+    /// Email template (%s is replaced with group name components).
+    pub template: String,
+}
+
+/// List of moderator patterns.
+///
+/// Wraps a list of [`ModeratorEntry`] values returned by LIST MODERATORS.
+///
+/// # Example
+///
+/// ```ignore
+/// let mods: ModeratorsList = response.try_into()?;
+/// for entry in mods.iter() {
+///     println!("{} -> {}", entry.wildmat, entry.template);
+/// }
+/// ```
+#[derive(Debug, Clone, PartialEq)]
+pub struct ModeratorsList(pub Vec<ModeratorEntry>);
+
+impl Deref for ModeratorsList {
+    type Target = Vec<ModeratorEntry>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+/// Distribution entry.
+///
+/// Represents a single entry from LIST DISTRIBUTIONS response.
+/// Each entry describes a valid distribution value.
+///
+/// # Format
+///
+/// The wire format is: `distribution description`
+/// - `distribution` - The distribution value (e.g., "world", "local")
+/// - `description` - Human-readable description
+///
+/// # Example
+///
+/// ```ignore
+/// let dist = DistributionEntry {
+///     name: "world".to_string(),
+///     description: "Worldwide distribution".to_string(),
+/// };
+/// ```
+#[derive(Debug, Clone, PartialEq)]
+pub struct DistributionEntry {
+    /// Distribution value.
+    pub name: String,
+    /// Human-readable description.
+    pub description: String,
+}
+
+/// List of valid distributions.
+///
+/// Wraps a list of [`DistributionEntry`] values returned by LIST DISTRIBUTIONS.
+///
+/// # Example
+///
+/// ```ignore
+/// let dists: DistributionsList = response.try_into()?;
+/// for entry in dists.iter() {
+///     println!("{}: {}", entry.name, entry.description);
+/// }
+/// ```
+#[derive(Debug, Clone, PartialEq)]
+pub struct DistributionsList(pub Vec<DistributionEntry>);
+
+impl Deref for DistributionsList {
+    type Target = Vec<DistributionEntry>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+/// Newsgroup description entry.
+///
+/// Represents a single entry from LIST NEWSGROUPS response (RFC 3977 Section 7.6.6).
+/// Each entry contains a newsgroup name and its description.
+///
+/// # Format
+///
+/// The wire format is: `groupname description`
+/// - `groupname` - The name of the newsgroup
+/// - `description` - Human-readable description of the newsgroup
+///
+/// # Example
+///
+/// ```ignore
+/// let entry = NewsgroupDesc {
+///     name: "comp.lang.rust".to_string(),
+///     description: "Discussion about the Rust programming language".to_string(),
+/// };
+/// ```
+#[derive(Debug, Clone, PartialEq)]
+pub struct NewsgroupDesc {
+    /// Newsgroup name.
+    pub name: String,
+    /// Human-readable description.
+    pub description: String,
+}
+
+/// List of newsgroup descriptions.
+///
+/// Wraps a list of [`NewsgroupDesc`] values returned by LIST NEWSGROUPS (215 response).
+/// Each entry contains the group name and a human-readable description.
+///
+/// # Example
+///
+/// ```ignore
+/// let descs: NewsgroupDescList = response.try_into()?;
+/// for entry in descs.iter() {
+///     println!("{}: {}", entry.name, entry.description);
+/// }
+/// ```
+#[derive(Debug, Clone, PartialEq)]
+pub struct NewsgroupDescList(pub Vec<NewsgroupDesc>);
+
+impl Deref for NewsgroupDescList {
+    type Target = Vec<NewsgroupDesc>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
 // TryFrom<Response> for Article
 impl TryFrom<Response> for Article {
     type Error = Error;
@@ -837,5 +1184,191 @@ mod tests {
             Error::InvalidResponse(msg) => assert!(msg.contains("article")),
             _ => panic!("Expected InvalidResponse error"),
         }
+    }
+
+    // Tests for new LIST variant wrapper types
+
+    #[test]
+    fn test_active_time_entry() {
+        let entry = ActiveTimeEntry {
+            name: "comp.lang.rust".to_string(),
+            timestamp: 1609459200,
+            creator: "admin@example.com".to_string(),
+        };
+        assert_eq!(entry.name, "comp.lang.rust");
+        assert_eq!(entry.timestamp, 1609459200);
+        assert_eq!(entry.creator, "admin@example.com");
+    }
+
+    #[test]
+    fn test_active_times_list_deref() {
+        let times = ActiveTimesList(vec![
+            ActiveTimeEntry {
+                name: "comp.lang.rust".to_string(),
+                timestamp: 1609459200,
+                creator: "admin@example.com".to_string(),
+            },
+            ActiveTimeEntry {
+                name: "alt.test".to_string(),
+                timestamp: 1609545600,
+                creator: "other@example.com".to_string(),
+            },
+        ]);
+        assert_eq!(times.len(), 2);
+        assert_eq!(times[0].name, "comp.lang.rust");
+        assert_eq!(times[1].name, "alt.test");
+    }
+
+    #[test]
+    fn test_distrib_pat() {
+        let pat = DistribPat {
+            weight: 10,
+            wildmat: "comp.*".to_string(),
+            distribution: "world".to_string(),
+        };
+        assert_eq!(pat.weight, 10);
+        assert_eq!(pat.wildmat, "comp.*");
+        assert_eq!(pat.distribution, "world");
+    }
+
+    #[test]
+    fn test_distrib_pats_list_deref() {
+        let pats = DistribPatsList(vec![
+            DistribPat {
+                weight: 10,
+                wildmat: "comp.*".to_string(),
+                distribution: "world".to_string(),
+            },
+            DistribPat {
+                weight: 5,
+                wildmat: "local.*".to_string(),
+                distribution: "local".to_string(),
+            },
+        ]);
+        assert_eq!(pats.len(), 2);
+        assert_eq!(pats[0].wildmat, "comp.*");
+        assert_eq!(pats[1].distribution, "local");
+    }
+
+    #[test]
+    fn test_headers_list_deref() {
+        let headers = HeadersList(vec![
+            "Subject".to_string(),
+            "From".to_string(),
+            ":bytes".to_string(),
+            ":lines".to_string(),
+        ]);
+        assert_eq!(headers.len(), 4);
+        assert!(headers.contains(&"Subject".to_string()));
+        assert!(headers.contains(&":bytes".to_string()));
+    }
+
+    #[test]
+    fn test_counts_entry() {
+        let entry = CountsEntry {
+            name: "comp.lang.rust".to_string(),
+            count: 1234,
+            low: 1,
+            high: 5000,
+            status: 'y',
+        };
+        assert_eq!(entry.name, "comp.lang.rust");
+        assert_eq!(entry.count, 1234);
+        assert_eq!(entry.low, 1);
+        assert_eq!(entry.high, 5000);
+        assert_eq!(entry.status, 'y');
+    }
+
+    #[test]
+    fn test_counts_list_deref() {
+        let counts = CountsList(vec![CountsEntry {
+            name: "misc.test".to_string(),
+            count: 100,
+            low: 1,
+            high: 200,
+            status: 'm',
+        }]);
+        assert_eq!(counts.len(), 1);
+        assert_eq!(counts[0].status, 'm');
+    }
+
+    #[test]
+    fn test_moderator_entry() {
+        let entry = ModeratorEntry {
+            wildmat: "comp.lang.*".to_string(),
+            template: "%s@moderators.example.org".to_string(),
+        };
+        assert_eq!(entry.wildmat, "comp.lang.*");
+        assert_eq!(entry.template, "%s@moderators.example.org");
+    }
+
+    #[test]
+    fn test_moderators_list_deref() {
+        let mods = ModeratorsList(vec![
+            ModeratorEntry {
+                wildmat: "comp.*".to_string(),
+                template: "%s@comp-moderators.example.org".to_string(),
+            },
+            ModeratorEntry {
+                wildmat: "*".to_string(),
+                template: "%s@default-moderators.example.org".to_string(),
+            },
+        ]);
+        assert_eq!(mods.len(), 2);
+        assert_eq!(mods[0].wildmat, "comp.*");
+    }
+
+    #[test]
+    fn test_distribution_entry() {
+        let entry = DistributionEntry {
+            name: "world".to_string(),
+            description: "Worldwide distribution".to_string(),
+        };
+        assert_eq!(entry.name, "world");
+        assert_eq!(entry.description, "Worldwide distribution");
+    }
+
+    #[test]
+    fn test_distributions_list_deref() {
+        let dists = DistributionsList(vec![
+            DistributionEntry {
+                name: "world".to_string(),
+                description: "Worldwide distribution".to_string(),
+            },
+            DistributionEntry {
+                name: "local".to_string(),
+                description: "Local distribution only".to_string(),
+            },
+        ]);
+        assert_eq!(dists.len(), 2);
+        assert_eq!(dists[0].name, "world");
+        assert_eq!(dists[1].name, "local");
+    }
+
+    #[test]
+    fn test_newsgroup_desc() {
+        let entry = NewsgroupDesc {
+            name: "comp.lang.rust".to_string(),
+            description: "Discussion about the Rust programming language".to_string(),
+        };
+        assert_eq!(entry.name, "comp.lang.rust");
+        assert!(entry.description.contains("Rust"));
+    }
+
+    #[test]
+    fn test_newsgroup_desc_list_deref() {
+        let descs = NewsgroupDescList(vec![
+            NewsgroupDesc {
+                name: "comp.lang.rust".to_string(),
+                description: "Rust programming".to_string(),
+            },
+            NewsgroupDesc {
+                name: "comp.lang.c".to_string(),
+                description: "C programming".to_string(),
+            },
+        ]);
+        assert_eq!(descs.len(), 2);
+        assert_eq!(descs[0].name, "comp.lang.rust");
+        assert_eq!(descs[1].name, "comp.lang.c");
     }
 }
