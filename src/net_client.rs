@@ -413,6 +413,36 @@ impl<S: AsyncStream> NntpClient<S> {
         response.try_into()
     }
 
+    /// List newsgroups (basic LIST command).
+    ///
+    /// Sends a plain LIST command to retrieve newsgroups. This is the basic
+    /// backwards-compatible form that returns active newsgroup information.
+    ///
+    /// # Returns
+    ///
+    /// A [`NewsgroupList`] containing newsgroup information.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// let groups = client.list().await?;
+    /// for group in groups.iter() {
+    ///     println!("{}: {} - {}", group.name, group.first, group.last);
+    /// }
+    /// ```
+    pub async fn list(&mut self) -> Result<NewsgroupList> {
+        let response = self
+            .send_command(Command::List(crate::ListVariant::Basic(None)))
+            .await?;
+        if let Response::Error { code, message } = &response {
+            return Err(Error::Protocol {
+                code: *code,
+                message: message.clone(),
+            });
+        }
+        response.try_into()
+    }
+
     /// List active newsgroups with optional wildmat pattern.
     ///
     /// Sends a LIST ACTIVE command to retrieve active newsgroups.
